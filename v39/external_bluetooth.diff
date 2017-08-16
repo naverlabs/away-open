@@ -1,0 +1,3684 @@
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/Android.mk lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/Android.mk
+--- repo_avn/external/bluetooth/bluedroid/Android.mk	2017-07-12 22:05:20.869189412 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/Android.mk	2017-01-25 20:49:25.818119000 +0900
+@@ -17,6 +17,10 @@
+   bdroid_CFLAGS += -DHCILP_INCLUDED=$(BOARD_BLUETOOTH_BDROID_HCILP_INCLUDED)
+ endif
+ 
++A2DP_SINK = true
++BLUETOOTH_A2DP_SINK = true
++bdroid_CFLAGS += -DA2DP_SINK
++
+ include $(call all-subdir-makefiles)
+ 
+ # Cleanup our locals
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/README_s5p6818_navi lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/README_s5p6818_navi
+--- repo_avn/external/bluetooth/bluedroid/README_s5p6818_navi	1970-01-01 09:00:00.000000000 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/README_s5p6818_navi	2017-07-11 11:08:23.866610000 +0900
+@@ -0,0 +1,5 @@
++(main source dir)$source build/envsetup.sh
++$lunch aosp_s5p6818_navi-userdebug
++
++$cd ./external/bluetooth/bluedroid/
++$mm
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/audio_a2dp_hw/Android.mk lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/audio_a2dp_hw/Android.mk
+--- repo_avn/external/bluetooth/bluedroid/audio_a2dp_hw/Android.mk	2017-07-12 22:05:20.869189412 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/audio_a2dp_hw/Android.mk	2017-01-25 20:49:25.818119000 +0900
+@@ -11,6 +11,10 @@
+ 
+ LOCAL_CFLAGS += -std=c99
+ 
++A2DP_SINK = true
++BLUETOOTH_A2DP_SINK = true
++LOCAL_CFLAGS += -DA2DP_SINK
++
+ LOCAL_MODULE := audio.a2dp.default
+ LOCAL_MODULE_RELATIVE_PATH := hw
+ 
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/audio_a2dp_hw/audio_a2dp_hw.c lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/audio_a2dp_hw/audio_a2dp_hw.c
+--- repo_avn/external/bluetooth/bluedroid/audio_a2dp_hw/audio_a2dp_hw.c	2017-07-12 22:05:20.869189412 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/audio_a2dp_hw/audio_a2dp_hw.c	2017-01-25 20:49:25.818119000 +0900
+@@ -233,9 +233,50 @@
+     return skt_fd;
+ }
+ 
++#ifdef A2DP_SINK
++static int skt_connect_in(struct a2dp_stream_in *in, char *path)
++{
++    int ret;
++    int skt_fd;
++    struct sockaddr_un remote;
++    int len;
++
++    INFO("connect to %s (sz %d)", path, in->common.buffer_sz);
++
++    skt_fd = socket(AF_LOCAL, SOCK_STREAM, 0);
++
++    if(socket_local_client_connect(skt_fd, path,
++            ANDROID_SOCKET_NAMESPACE_ABSTRACT, SOCK_STREAM) < 0)
++    {
++        ERROR("failed to connect (%s)", strerror(errno));
++        close(skt_fd);
++        return -1;
++    }
++
++    len = in->common.buffer_sz;
++    INFO("SDY --- in->common.buffer_sz : %d", len);
++
++    ret = setsockopt(skt_fd, SOL_SOCKET, SO_SNDBUF, (char*)&len, (int)sizeof(len));
++
++    /* only issue warning if failed */
++    if (ret < 0)
++        ERROR("setsockopt failed (%s)", strerror(errno));
++
++    ret = setsockopt(skt_fd, SOL_SOCKET, SO_RCVBUF, (char*)&len, (int)sizeof(len));
++
++    /* only issue warning if failed */
++    if (ret < 0)
++        ERROR("setsockopt failed (%s)", strerror(errno));
++
++    INFO("connected to stack fd = %d", skt_fd);
++
++    return skt_fd;
++}
++#endif
++
+ static int skt_read(int fd, void *p, size_t len)
+ {
+-    int read;
++    int readed;
+     struct pollfd pfd;
+     struct timespec ts;
+ 
+@@ -243,13 +284,25 @@
+ 
+     ts_log("skt_read recv", len, NULL);
+ 
+-    if ((read = recv(fd, p, len, MSG_NOSIGNAL)) == -1)
++#ifdef A2DP_SINK
++    pfd.fd = fd;
++    pfd.events = POLLIN;
++
++    /* poll for 500 ms */
++    /* recv time out */
++    if (poll(&pfd, 1, 500) < 0) {
++        INFO("SDY --- polling is time out..");
++        return 0;
++    }
++#endif
++
++    if ((readed = recv(fd, p, len, MSG_NOSIGNAL)) == -1)
+     {
+         ERROR("write failed with errno=%d\n", errno);
+         return -1;
+     }
+ 
+-    return read;
++    return readed;
+ }
+ 
+ static int skt_write(int fd, const void *p, size_t len)
+@@ -292,6 +345,45 @@
+ }
+ 
+ 
++#ifdef A2DP_SINK
++static int a2dp_command_in(struct a2dp_stream_in *in, char cmd)
++{
++    char ack;
++
++    DEBUG("A2DP COMMAND %s", dump_a2dp_ctrl_event(cmd));
++
++    /* send command */
++    if (send(in->common.ctrl_fd, &cmd, 1, MSG_NOSIGNAL) == -1)
++    {
++	    INFO("SDY --- cmd failed : %s", strerror(errno));
++        ERROR("cmd failed (%s)", strerror(errno));
++        skt_disconnect(in->common.ctrl_fd);
++        in->common.ctrl_fd = AUDIO_SKT_DISCONNECTED;
++        return -1;
++    }
++
++    /* wait for ack byte */
++    if (recv(in->common.ctrl_fd, &ack, 1, MSG_NOSIGNAL) < 0)
++    {
++	    INFO("SDY --- ack failed : %s", strerror(errno));
++        ERROR("ack failed (%s)", strerror(errno));
++        skt_disconnect(in->common.ctrl_fd);
++        in->common.ctrl_fd = AUDIO_SKT_DISCONNECTED;
++        return -1;
++    }
++
++    //DEBUG("A2DP COMMAND %s DONE STATUS %d", dump_a2dp_ctrl_event(cmd), ack);
++    INFO("SDY --- A2DP COMMAND %s DONE STATUS %d", dump_a2dp_ctrl_event(cmd), ack);
++
++    if (ack != A2DP_CTRL_ACK_SUCCESS) {
++	    INFO("SDY --- ack != A2DP_CTRL_ACK_SUCCESS");
++        return -1;
++    }
++
++    return 0;
++}
++#endif
++
+ 
+ /*****************************************************************************
+ **
+@@ -365,6 +457,19 @@
+     return 0;
+ }
+ 
++#ifdef A2DP_SINK
++static int check_a2dp_ready_in(struct a2dp_stream_in *in)
++{
++    INFO("state %d", in->common.state);
++    if (a2dp_command_in(in, A2DP_CTRL_CMD_CHECK_READY) < 0)
++    {
++        ERROR("check a2dp ready failed");
++        return -1;
++    }
++    return 0;
++}
++#endif
++
+ static int a2dp_read_audio_config(struct a2dp_stream_common *common)
+ {
+     char cmd = A2DP_CTRL_GET_AUDIO_CONFIG;
+@@ -440,6 +545,30 @@
+     common->buffer_sz = AUDIO_STREAM_OUTPUT_BUFFER_SZ;
+ }
+ 
++#ifdef A2DP_SINK
++static void a2dp_stream_in_init(struct a2dp_stream_in *in)
++{
++    pthread_mutexattr_t lock_attr;
++
++    FNLOG();
++
++    pthread_mutexattr_init(&lock_attr);
++    pthread_mutexattr_settype(&lock_attr, PTHREAD_MUTEX_RECURSIVE);
++    pthread_mutex_init(&in->common.lock, &lock_attr);
++
++    in->common.ctrl_fd = AUDIO_SKT_DISCONNECTED;
++    in->common.audio_fd = AUDIO_SKT_DISCONNECTED;
++    in->common.state = AUDIO_A2DP_STATE_STOPPED;
++
++    in->common.cfg.channel_flags = AUDIO_STREAM_DEFAULT_INPUT_CHANNEL_FLAG;
++    in->common.cfg.format = AUDIO_STREAM_DEFAULT_FORMAT;
++    in->common.cfg.rate = AUDIO_STREAM_DEFAULT_RATE;
++
++    /* manages max capacity of socket pipe */
++    in->common.buffer_sz = AUDIO_STREAM_INPUT_BUFFER_SZ;
++}
++#endif
++
+ static int start_audio_datapath(struct a2dp_stream_common *common)
+ {
+     int oldstate = common->state;
+@@ -477,6 +606,44 @@
+     return 0;
+ }
+ 
++#ifdef A2DP_SINK
++static int start_audio_in_datapath(struct a2dp_stream_in *in)
++{
++    int oldstate = in->common.state;
++
++    INFO("state %d", in->common.state);
++
++    if (in->common.ctrl_fd == AUDIO_SKT_DISCONNECTED)
++        return -1;
++
++    in->common.state = AUDIO_A2DP_STATE_STARTING;
++
++    if (a2dp_command_in(in, A2DP_CTRL_CMD_START) < 0)
++    {
++        ERROR("audio-in-path start failed");
++        in->common.state = oldstate;
++        return -1;
++    }
++
++    /* connect socket if not yet connected */
++    if (in->common.audio_fd == AUDIO_SKT_DISCONNECTED)
++    {
++        in->common.audio_fd = skt_connect_in(in, A2DP_DATA_PATH);
++        if (in->common.audio_fd < 0)
++        {
++	        INFO("SDY --- in->common.audio_fd < 0 --- return -1");
++            in->common.state = oldstate;
++            return -1;
++        }
++
++        in->common.state = AUDIO_A2DP_STATE_STARTED;
++    }
++
++    INFO("in->common.audio_fd : %d",in->common.audio_fd);
++
++    return 0;
++}
++#endif
+ 
+ static int stop_audio_datapath(struct a2dp_stream_common *common)
+ {
+@@ -533,6 +700,42 @@
+     return 0;
+ }
+ 
++#ifdef A2DP_SINK
++static int suspend_audio_in_datapath(struct a2dp_stream_in *in, bool standby)
++{
++    INFO("state %d", in->common.state);
++
++    if (in->common.ctrl_fd == AUDIO_SKT_DISCONNECTED) {
++	    INFO("SDY --- in->common.ctrl_fd == AUDIO_SKT_DISCONNECTED");
++        return -1;
++    }
++
++    if (in->common.state == AUDIO_A2DP_STATE_STOPPING) {
++	    INFO("SDY --- in->common.state == AUDIO_A2DP_STATE_STOPPING");
++        return -1;
++    }
++
++    /*
++    if (a2dp_command_in(in, A2DP_CTRL_CMD_SUSPEND) < 0) {
++	    INFO("SDY --- a2dp_command_in() is not equal to 0");
++        return -1;
++    }
++    */
++
++    if (standby)
++        in->common.state = AUDIO_A2DP_STATE_STANDBY;
++    else
++        in->common.state = AUDIO_A2DP_STATE_SUSPENDED;
++
++    /* disconnect audio path */
++    skt_disconnect(in->common.audio_fd);
++
++    in->common.audio_fd = AUDIO_SKT_DISCONNECTED;
++
++    return 0;
++}
++#endif
++
+ 
+ /*****************************************************************************
+ **
+@@ -823,20 +1026,39 @@
+ {
+     struct a2dp_stream_in *in = (struct a2dp_stream_in *)stream;
+ 
++#ifdef A2DP_SINK
++    DEBUG("in_set_sample_rate : %d", rate);
++
++    if (rate != AUDIO_STREAM_DEFAULT_RATE)
++    {
++        ERROR("only rate %d supported", AUDIO_STREAM_DEFAULT_RATE);
++        return -1;
++    }
++
++    in->common.cfg.rate = rate;
++
++    return 0;
++#else
+     FNLOG();
+ 
+     if (in->common.cfg.rate > 0 && in->common.cfg.rate == rate)
+         return 0;
+     else
+         return -1;
++#endif
+ }
+ 
+ static size_t in_get_buffer_size(const struct audio_stream *stream)
+ {
+-    UNUSED(stream);
+-
++    //UNUSED(stream);
++#ifdef A2DP_SINK
++    struct a2dp_stream_in *in = (struct a2dp_stream_in *)stream;
++    DEBUG("buffer_size : %d", in->common.buffer_sz);
++    return in->common.buffer_sz;
++#else
+     FNLOG();
+     return 320;
++#endif
+ }
+ 
+ static uint32_t in_get_channels(const struct audio_stream *stream)
+@@ -849,30 +1071,61 @@
+ 
+ static audio_format_t in_get_format(const struct audio_stream *stream)
+ {
+-    UNUSED(stream);
+-
++    //UNUSED(stream);
++#ifdef A2DP_SINK
++    struct a2dp_stream_in *in = (struct a2dp_stream_in *)stream;
++    DEBUG("format 0x%x", in->common.cfg.format);
++    return in->common.cfg.format;
++#else
+     FNLOG();
+     return AUDIO_FORMAT_PCM_16_BIT;
++#endif
+ }
+ 
+ static int in_set_format(struct audio_stream *stream, audio_format_t format)
+ {
+-    UNUSED(stream);
+-    UNUSED(format);
+-
++    //UNUSED(stream);
++    //UNUSED(format);
++#ifdef A2DP_SINK
++    struct a2dp_stream_in *in = (struct a2dp_stream_in *)stream;
++    DEBUG("setting format not yet supported (0x%x)", format);
++    return -ENOSYS;
++#else
+     FNLOG();
+     if (format == AUDIO_FORMAT_PCM_16_BIT)
+         return 0;
+     else
+         return -1;
++#endif
+ }
+ 
+ static int in_standby(struct audio_stream *stream)
+ {
+-    UNUSED(stream);
++    //UNUSED(stream);
++#ifdef A2DP_SINK
++    struct a2dp_stream_in *in = (struct a2dp_stream_in *)stream;
++    int retVal = 0;
++
++    FNLOG();
++
++    pthread_mutex_lock(&in->common.lock);
++
++    if (in->common.state == AUDIO_A2DP_STATE_STARTED) {
++	    INFO("SDY --- in->common.state == AUDIO_A2DP_STATE_STARTED..");
++        retVal = suspend_audio_in_datapath(in, true);
++    } else {
++	    INFO("SDY --- in->common.state != AUDIO_A2DP_STATE_STARTED..");
++        retVal = 0;
++    }
++    pthread_mutex_unlock(&in->common.lock);
++
++    INFO("SDY --- retVal : %d", retVal);
+ 
++    return retVal;
++#else
+     FNLOG();
+     return 0;
++#endif
+ }
+ 
+ static int in_dump(const struct audio_stream *stream, int fd)
+@@ -915,6 +1168,62 @@
+ static ssize_t in_read(struct audio_stream_in *stream, void* buffer,
+                        size_t bytes)
+ {
++#ifdef A2DP_SINK
++    struct a2dp_stream_in *in = (struct a2dp_stream_in *)stream;
++    int recved;
++
++    //INFO("read %d bytes (fd %d)", bytes, in->common.audio_fd);
++
++    if (in->common.state == AUDIO_A2DP_STATE_SUSPENDED)
++    {
++        INFO("stream suspended");
++        return -1;
++    }
++
++    /* only allow autostarting if we are in stopped or standby */
++    if ((in->common.state == AUDIO_A2DP_STATE_STOPPED) ||
++        (in->common.state == AUDIO_A2DP_STATE_STANDBY))
++    {
++        pthread_mutex_lock(&in->common.lock);
++
++        if (start_audio_in_datapath(in) < 0)
++        {
++            /* emulate time this read represents to avoid very fast read
++               failures during transition periods or remote suspend */
++
++            int us_delay = calc_audiotime(in->common.cfg, bytes);
++
++            INFO("emulate a2dp read delay (%d us)", us_delay);
++
++            usleep(us_delay);
++            pthread_mutex_unlock(&in->common.lock);
++            return -1;
++        }
++
++        pthread_mutex_unlock(&in->common.lock);
++    }
++    else if (in->common.state != AUDIO_A2DP_STATE_STARTED)
++    {
++        INFO("stream not in stopped or standby");
++        return -1;
++    }
++
++    //INFO("SDY --- skt_read() start..");
++
++    recved = skt_read(in->common.audio_fd, buffer, bytes);
++
++    //INFO("SDY --- skt_read() end.. --- value : %d",recved);
++
++    if (recved == -1)
++    {
++        skt_disconnect(in->common.audio_fd);
++        in->common.audio_fd = AUDIO_SKT_DISCONNECTED;
++        in->common.state = AUDIO_A2DP_STATE_STOPPED;
++    }
++
++    //INFO("read %d bytes out of %d bytes", recved, bytes);
++    return recved;
++#else
+     struct a2dp_stream_in *in = (struct a2dp_stream_in *)stream;
+     int read;
+ 
+@@ -969,6 +1278,7 @@
+ 
+     DEBUG("read %d bytes out of %zu bytes", read, bytes);
+     return read;
++#endif
+ }
+ 
+ static uint32_t in_get_input_frames_lost(struct audio_stream_in *stream)
+@@ -1210,7 +1520,8 @@
+     int ret;
+     UNUSED(handle);
+     UNUSED(devices);
+-    UNUSED(config);
++    //UNUSED(config);
++    int i;
+ 
+     FNLOG();
+ 
+@@ -1236,12 +1547,48 @@
+     in->stream.get_input_frames_lost = in_get_input_frames_lost;
+ 
+     /* initialize a2dp specifics */
++#ifdef A2DP_SINK
++    a2dp_stream_in_init(in);
++    /* set input config values */
++    
++    if (config)
++    {
++      config->format = in_get_format((const struct audio_stream *)&in->stream);
++      config->sample_rate = in_get_sample_rate((const struct audio_stream *)&in->stream);
++      config->channel_mask = in_get_channels((const struct audio_stream *)&in->stream);
++    }
++#else
+     a2dp_stream_common_init(&in->common);
++#endif
+ 
+     *stream_in = &in->stream;
+     a2dp_dev->input = in;
+ 
++#ifndef A2DP_SINK
+     a2dp_open_ctrl_path(&in->common);
++#endif
++
++#ifdef A2DP_SINK
++    /* retry logic to catch any timing variations on control channel */
++    for (i = 0; i < CTRL_CHAN_RETRY_COUNT; i++)
++    {
++        /* connect control channel if not already connected */
++        if ((in->common.ctrl_fd = skt_connect_in(in, A2DP_CTRL_PATH)) > 0)
++        {
++            /* success, now check if stack is ready */
++            if (check_a2dp_ready_in(in) == 0)
++                break;
++
++            ERROR("error : a2dp not ready, wait 250 ms and retry");
++            usleep(250000);
++            skt_disconnect(in->common.ctrl_fd);
++        }
++
++        /* ctrl channel not ready, wait a bit */
++        usleep(250000);
++    }
++#endif
++
+     if (in->common.ctrl_fd == AUDIO_SKT_DISCONNECTED)
+     {
+         ERROR("ctrl socket failed to connect (%s)", strerror(errno));
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/audio_a2dp_hw/audio_a2dp_hw.h lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/audio_a2dp_hw/audio_a2dp_hw.h
+--- repo_avn/external/bluetooth/bluedroid/audio_a2dp_hw/audio_a2dp_hw.h	2017-07-12 22:05:20.869189412 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/audio_a2dp_hw/audio_a2dp_hw.h	2017-01-25 20:49:25.818119000 +0900
+@@ -41,6 +41,11 @@
+ #define AUDIO_STREAM_OUTPUT_BUFFER_SZ      (20*512)
+ #define AUDIO_SKT_DISCONNECTED             (-1)
+ 
++#ifdef A2DP_SINK
++#define AUDIO_STREAM_DEFAULT_INPUT_CHANNEL_FLAG  AUDIO_CHANNEL_IN_STEREO
++#define AUDIO_STREAM_INPUT_BUFFER_SZ             (20*512)
++#endif
++
+ typedef enum {
+     A2DP_CTRL_CMD_NONE,
+     A2DP_CTRL_CMD_CHECK_READY,
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/bluez/Android.mk lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bluez/Android.mk
+--- repo_avn/external/bluetooth/bluedroid/bluez/Android.mk	1970-01-01 09:00:00.000000000 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bluez/Android.mk	2017-07-05 13:29:54.227037000 +0900
+@@ -0,0 +1,36 @@
++LOCAL_PATH := $(call my-dir)
++
++#
++# Bluetooth HW module
++#
++
++include $(CLEAR_VARS)
++
++
++LOCAL_SRC_FILES += \
++    ./sbc_decoder.c \
++
++
++LOCAL_C_INCLUDES += . \
++	$(LOCAL_PATH)/../bta/include \
++	$(LOCAL_PATH)/../gki/ulinux \
++	$(LOCAL_PATH)/../include \
++	$(LOCAL_PATH)/../stack/a2dp \
++	$(LOCAL_PATH)/../udrv/include \
++	$(LOCAL_PATH)/../btif/include \
++	$(LOCAL_PATH)/../embdrv/sbc/encoder/include \
++	$(LOCAL_PATH)/../embdrv/sbc/decoder/include \
++	$(LOCAL_PATH)/../audio_a2dp_hw \
++	$(LOCAL_PATH)/../utils/include \
++	$(LOCAL_PATH)/../stack/include \
++	$(bdroid_C_INCLUDES) \
++
++LOCAL_CFLAGS += -DBUILDCFG $(bdroid_CFLAGS) -Wno-error=maybe-uninitialized -Wno-error=uninitialized -Wno-error=unused-parameter
++LOCAL_CONLYFLAGS := -std=c99
++
++LOCAL_MODULE :=libbt_sbc_decoder
++LOCAL_MODULE_TAGS := optional
++LOCAL_MODULE_CLASS := SHARED_LIBRARIES
++LOCAL_MULTILIB := 32
++
++include $(BUILD_SHARED_LIBRARY)
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/bluez/NOTICE lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bluez/NOTICE
+--- repo_avn/external/bluetooth/bluedroid/bluez/NOTICE	1970-01-01 09:00:00.000000000 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bluez/NOTICE	2017-07-06 10:07:30.051904000 +0900
+@@ -0,0 +1,502 @@
++                    GNU LESSER GENERAL PUBLIC LICENSE
++                       Version 2.1, February 1999
++
++ Copyright (C) 1991, 1999 Free Software Foundation, Inc.
++ 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ Everyone is permitted to copy and distribute verbatim copies
++ of this license document, but changing it is not allowed.
++
++[This is the first released version of the Lesser GPL.  It also counts
++ as the successor of the GNU Library Public License, version 2, hence
++ the version number 2.1.]
++
++                            Preamble
++
++  The licenses for most software are designed to take away your
++freedom to share and change it.  By contrast, the GNU General Public
++Licenses are intended to guarantee your freedom to share and change
++free software--to make sure the software is free for all its users.
++
++  This license, the Lesser General Public License, applies to some
++specially designated software packages--typically libraries--of the
++Free Software Foundation and other authors who decide to use it.  You
++can use it too, but we suggest you first think carefully about whether
++this license or the ordinary General Public License is the better
++strategy to use in any particular case, based on the explanations below.
++
++  When we speak of free software, we are referring to freedom of use,
++not price.  Our General Public Licenses are designed to make sure that
++you have the freedom to distribute copies of free software (and charge
++for this service if you wish); that you receive source code or can get
++it if you want it; that you can change the software and use pieces of
++it in new free programs; and that you are informed that you can do
++these things.
++
++  To protect your rights, we need to make restrictions that forbid
++distributors to deny you these rights or to ask you to surrender these
++rights.  These restrictions translate to certain responsibilities for
++you if you distribute copies of the library or if you modify it.
++
++  For example, if you distribute copies of the library, whether gratis
++or for a fee, you must give the recipients all the rights that we gave
++you.  You must make sure that they, too, receive or can get the source
++code.  If you link other code with the library, you must provide
++complete object files to the recipients, so that they can relink them
++with the library after making changes to the library and recompiling
++it.  And you must show them these terms so they know their rights.
++
++  We protect your rights with a two-step method: (1) we copyright the
++library, and (2) we offer you this license, which gives you legal
++permission to copy, distribute and/or modify the library.
++
++  To protect each distributor, we want to make it very clear that
++there is no warranty for the free library.  Also, if the library is
++modified by someone else and passed on, the recipients should know
++that what they have is not the original version, so that the original
++author's reputation will not be affected by problems that might be
++introduced by others.
++
++  Finally, software patents pose a constant threat to the existence of
++any free program.  We wish to make sure that a company cannot
++effectively restrict the users of a free program by obtaining a
++restrictive license from a patent holder.  Therefore, we insist that
++any patent license obtained for a version of the library must be
++consistent with the full freedom of use specified in this license.
++
++  Most GNU software, including some libraries, is covered by the
++ordinary GNU General Public License.  This license, the GNU Lesser
++General Public License, applies to certain designated libraries, and
++is quite different from the ordinary General Public License.  We use
++this license for certain libraries in order to permit linking those
++libraries into non-free programs.
++
++  When a program is linked with a library, whether statically or using
++a shared library, the combination of the two is legally speaking a
++combined work, a derivative of the original library.  The ordinary
++General Public License therefore permits such linking only if the
++entire combination fits its criteria of freedom.  The Lesser General
++Public License permits more lax criteria for linking other code with
++the library.
++
++  We call this license the "Lesser" General Public License because it
++does Less to protect the user's freedom than the ordinary General
++Public License.  It also provides other free software developers Less
++of an advantage over competing non-free programs.  These disadvantages
++are the reason we use the ordinary General Public License for many
++libraries.  However, the Lesser license provides advantages in certain
++special circumstances.
++
++  For example, on rare occasions, there may be a special need to
++encourage the widest possible use of a certain library, so that it becomes
++a de-facto standard.  To achieve this, non-free programs must be
++allowed to use the library.  A more frequent case is that a free
++library does the same job as widely used non-free libraries.  In this
++case, there is little to gain by limiting the free library to free
++software only, so we use the Lesser General Public License.
++
++  In other cases, permission to use a particular library in non-free
++programs enables a greater number of people to use a large body of
++free software.  For example, permission to use the GNU C Library in
++non-free programs enables many more people to use the whole GNU
++operating system, as well as its variant, the GNU/Linux operating
++system.
++
++  Although the Lesser General Public License is Less protective of the
++users' freedom, it does ensure that the user of a program that is
++linked with the Library has the freedom and the wherewithal to run
++that program using a modified version of the Library.
++
++  The precise terms and conditions for copying, distribution and
++modification follow.  Pay close attention to the difference between a
++"work based on the library" and a "work that uses the library".  The
++former contains code derived from the library, whereas the latter must
++be combined with the library in order to run.
++
++                  GNU LESSER GENERAL PUBLIC LICENSE
++   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
++
++  0. This License Agreement applies to any software library or other
++program which contains a notice placed by the copyright holder or
++other authorized party saying it may be distributed under the terms of
++this Lesser General Public License (also called "this License").
++Each licensee is addressed as "you".
++
++  A "library" means a collection of software functions and/or data
++prepared so as to be conveniently linked with application programs
++(which use some of those functions and data) to form executables.
++
++  The "Library", below, refers to any such software library or work
++which has been distributed under these terms.  A "work based on the
++Library" means either the Library or any derivative work under
++copyright law: that is to say, a work containing the Library or a
++portion of it, either verbatim or with modifications and/or translated
++straightforwardly into another language.  (Hereinafter, translation is
++included without limitation in the term "modification".)
++
++  "Source code" for a work means the preferred form of the work for
++making modifications to it.  For a library, complete source code means
++all the source code for all modules it contains, plus any associated
++interface definition files, plus the scripts used to control compilation
++and installation of the library.
++
++  Activities other than copying, distribution and modification are not
++covered by this License; they are outside its scope.  The act of
++running a program using the Library is not restricted, and output from
++such a program is covered only if its contents constitute a work based
++on the Library (independent of the use of the Library in a tool for
++writing it).  Whether that is true depends on what the Library does
++and what the program that uses the Library does.
++
++  1. You may copy and distribute verbatim copies of the Library's
++complete source code as you receive it, in any medium, provided that
++you conspicuously and appropriately publish on each copy an
++appropriate copyright notice and disclaimer of warranty; keep intact
++all the notices that refer to this License and to the absence of any
++warranty; and distribute a copy of this License along with the
++Library.
++
++  You may charge a fee for the physical act of transferring a copy,
++and you may at your option offer warranty protection in exchange for a
++fee.
++
++  2. You may modify your copy or copies of the Library or any portion
++of it, thus forming a work based on the Library, and copy and
++distribute such modifications or work under the terms of Section 1
++above, provided that you also meet all of these conditions:
++
++    a) The modified work must itself be a software library.
++
++    b) You must cause the files modified to carry prominent notices
++    stating that you changed the files and the date of any change.
++
++    c) You must cause the whole of the work to be licensed at no
++    charge to all third parties under the terms of this License.
++
++    d) If a facility in the modified Library refers to a function or a
++    table of data to be supplied by an application program that uses
++    the facility, other than as an argument passed when the facility
++    is invoked, then you must make a good faith effort to ensure that,
++    in the event an application does not supply such function or
++    table, the facility still operates, and performs whatever part of
++    its purpose remains meaningful.
++
++    (For example, a function in a library to compute square roots has
++    a purpose that is entirely well-defined independent of the
++    application.  Therefore, Subsection 2d requires that any
++    application-supplied function or table used by this function must
++    be optional: if the application does not supply it, the square
++    root function must still compute square roots.)
++
++These requirements apply to the modified work as a whole.  If
++identifiable sections of that work are not derived from the Library,
++and can be reasonably considered independent and separate works in
++themselves, then this License, and its terms, do not apply to those
++sections when you distribute them as separate works.  But when you
++distribute the same sections as part of a whole which is a work based
++on the Library, the distribution of the whole must be on the terms of
++this License, whose permissions for other licensees extend to the
++entire whole, and thus to each and every part regardless of who wrote
++it.
++
++Thus, it is not the intent of this section to claim rights or contest
++your rights to work written entirely by you; rather, the intent is to
++exercise the right to control the distribution of derivative or
++collective works based on the Library.
++
++In addition, mere aggregation of another work not based on the Library
++with the Library (or with a work based on the Library) on a volume of
++a storage or distribution medium does not bring the other work under
++the scope of this License.
++
++  3. You may opt to apply the terms of the ordinary GNU General Public
++License instead of this License to a given copy of the Library.  To do
++this, you must alter all the notices that refer to this License, so
++that they refer to the ordinary GNU General Public License, version 2,
++instead of to this License.  (If a newer version than version 2 of the
++ordinary GNU General Public License has appeared, then you can specify
++that version instead if you wish.)  Do not make any other change in
++these notices.
++
++  Once this change is made in a given copy, it is irreversible for
++that copy, so the ordinary GNU General Public License applies to all
++subsequent copies and derivative works made from that copy.
++
++  This option is useful when you wish to copy part of the code of
++the Library into a program that is not a library.
++
++  4. You may copy and distribute the Library (or a portion or
++derivative of it, under Section 2) in object code or executable form
++under the terms of Sections 1 and 2 above provided that you accompany
++it with the complete corresponding machine-readable source code, which
++must be distributed under the terms of Sections 1 and 2 above on a
++medium customarily used for software interchange.
++
++  If distribution of object code is made by offering access to copy
++from a designated place, then offering equivalent access to copy the
++source code from the same place satisfies the requirement to
++distribute the source code, even though third parties are not
++compelled to copy the source along with the object code.
++
++  5. A program that contains no derivative of any portion of the
++Library, but is designed to work with the Library by being compiled or
++linked with it, is called a "work that uses the Library".  Such a
++work, in isolation, is not a derivative work of the Library, and
++therefore falls outside the scope of this License.
++
++  However, linking a "work that uses the Library" with the Library
++creates an executable that is a derivative of the Library (because it
++contains portions of the Library), rather than a "work that uses the
++library".  The executable is therefore covered by this License.
++Section 6 states terms for distribution of such executables.
++
++  When a "work that uses the Library" uses material from a header file
++that is part of the Library, the object code for the work may be a
++derivative work of the Library even though the source code is not.
++Whether this is true is especially significant if the work can be
++linked without the Library, or if the work is itself a library.  The
++threshold for this to be true is not precisely defined by law.
++
++  If such an object file uses only numerical parameters, data
++structure layouts and accessors, and small macros and small inline
++functions (ten lines or less in length), then the use of the object
++file is unrestricted, regardless of whether it is legally a derivative
++work.  (Executables containing this object code plus portions of the
++Library will still fall under Section 6.)
++
++  Otherwise, if the work is a derivative of the Library, you may
++distribute the object code for the work under the terms of Section 6.
++Any executables containing that work also fall under Section 6,
++whether or not they are linked directly with the Library itself.
++
++  6. As an exception to the Sections above, you may also combine or
++link a "work that uses the Library" with the Library to produce a
++work containing portions of the Library, and distribute that work
++under terms of your choice, provided that the terms permit
++modification of the work for the customer's own use and reverse
++engineering for debugging such modifications.
++
++  You must give prominent notice with each copy of the work that the
++Library is used in it and that the Library and its use are covered by
++this License.  You must supply a copy of this License.  If the work
++during execution displays copyright notices, you must include the
++copyright notice for the Library among them, as well as a reference
++directing the user to the copy of this License.  Also, you must do one
++of these things:
++
++    a) Accompany the work with the complete corresponding
++    machine-readable source code for the Library including whatever
++    changes were used in the work (which must be distributed under
++    Sections 1 and 2 above); and, if the work is an executable linked
++    with the Library, with the complete machine-readable "work that
++    uses the Library", as object code and/or source code, so that the
++    user can modify the Library and then relink to produce a modified
++    executable containing the modified Library.  (It is understood
++    that the user who changes the contents of definitions files in the
++    Library will not necessarily be able to recompile the application
++    to use the modified definitions.)
++
++    b) Use a suitable shared library mechanism for linking with the
++    Library.  A suitable mechanism is one that (1) uses at run time a
++    copy of the library already present on the user's computer system,
++    rather than copying library functions into the executable, and (2)
++    will operate properly with a modified version of the library, if
++    the user installs one, as long as the modified version is
++    interface-compatible with the version that the work was made with.
++
++    c) Accompany the work with a written offer, valid for at
++    least three years, to give the same user the materials
++    specified in Subsection 6a, above, for a charge no more
++    than the cost of performing this distribution.
++
++    d) If distribution of the work is made by offering access to copy
++    from a designated place, offer equivalent access to copy the above
++    specified materials from the same place.
++
++    e) Verify that the user has already received a copy of these
++    materials or that you have already sent this user a copy.
++
++  For an executable, the required form of the "work that uses the
++Library" must include any data and utility programs needed for
++reproducing the executable from it.  However, as a special exception,
++the materials to be distributed need not include anything that is
++normally distributed (in either source or binary form) with the major
++components (compiler, kernel, and so on) of the operating system on
++which the executable runs, unless that component itself accompanies
++the executable.
++
++  It may happen that this requirement contradicts the license
++restrictions of other proprietary libraries that do not normally
++accompany the operating system.  Such a contradiction means you cannot
++use both them and the Library together in an executable that you
++distribute.
++
++  7. You may place library facilities that are a work based on the
++Library side-by-side in a single library together with other library
++facilities not covered by this License, and distribute such a combined
++library, provided that the separate distribution of the work based on
++the Library and of the other library facilities is otherwise
++permitted, and provided that you do these two things:
++
++    a) Accompany the combined library with a copy of the same work
++    based on the Library, uncombined with any other library
++    facilities.  This must be distributed under the terms of the
++    Sections above.
++
++    b) Give prominent notice with the combined library of the fact
++    that part of it is a work based on the Library, and explaining
++    where to find the accompanying uncombined form of the same work.
++
++  8. You may not copy, modify, sublicense, link with, or distribute
++the Library except as expressly provided under this License.  Any
++attempt otherwise to copy, modify, sublicense, link with, or
++distribute the Library is void, and will automatically terminate your
++rights under this License.  However, parties who have received copies,
++or rights, from you under this License will not have their licenses
++terminated so long as such parties remain in full compliance.
++
++  9. You are not required to accept this License, since you have not
++signed it.  However, nothing else grants you permission to modify or
++distribute the Library or its derivative works.  These actions are
++prohibited by law if you do not accept this License.  Therefore, by
++modifying or distributing the Library (or any work based on the
++Library), you indicate your acceptance of this License to do so, and
++all its terms and conditions for copying, distributing or modifying
++the Library or works based on it.
++
++  10. Each time you redistribute the Library (or any work based on the
++Library), the recipient automatically receives a license from the
++original licensor to copy, distribute, link with or modify the Library
++subject to these terms and conditions.  You may not impose any further
++restrictions on the recipients' exercise of the rights granted herein.
++You are not responsible for enforcing compliance by third parties with
++this License.
++
++  11. If, as a consequence of a court judgment or allegation of patent
++infringement or for any other reason (not limited to patent issues),
++conditions are imposed on you (whether by court order, agreement or
++otherwise) that contradict the conditions of this License, they do not
++excuse you from the conditions of this License.  If you cannot
++distribute so as to satisfy simultaneously your obligations under this
++License and any other pertinent obligations, then as a consequence you
++may not distribute the Library at all.  For example, if a patent
++license would not permit royalty-free redistribution of the Library by
++all those who receive copies directly or indirectly through you, then
++the only way you could satisfy both it and this License would be to
++refrain entirely from distribution of the Library.
++
++If any portion of this section is held invalid or unenforceable under any
++particular circumstance, the balance of the section is intended to apply,
++and the section as a whole is intended to apply in other circumstances.
++
++It is not the purpose of this section to induce you to infringe any
++patents or other property right claims or to contest validity of any
++such claims; this section has the sole purpose of protecting the
++integrity of the free software distribution system which is
++implemented by public license practices.  Many people have made
++generous contributions to the wide range of software distributed
++through that system in reliance on consistent application of that
++system; it is up to the author/donor to decide if he or she is willing
++to distribute software through any other system and a licensee cannot
++impose that choice.
++
++This section is intended to make thoroughly clear what is believed to
++be a consequence of the rest of this License.
++
++  12. If the distribution and/or use of the Library is restricted in
++certain countries either by patents or by copyrighted interfaces, the
++original copyright holder who places the Library under this License may add
++an explicit geographical distribution limitation excluding those countries,
++so that distribution is permitted only in or among countries not thus
++excluded.  In such case, this License incorporates the limitation as if
++written in the body of this License.
++
++  13. The Free Software Foundation may publish revised and/or new
++versions of the Lesser General Public License from time to time.
++Such new versions will be similar in spirit to the present version,
++but may differ in detail to address new problems or concerns.
++
++Each version is given a distinguishing version number.  If the Library
++specifies a version number of this License which applies to it and
++"any later version", you have the option of following the terms and
++conditions either of that version or of any later version published by
++the Free Software Foundation.  If the Library does not specify a
++license version number, you may choose any version ever published by
++the Free Software Foundation.
++
++  14. If you wish to incorporate parts of the Library into other free
++programs whose distribution conditions are incompatible with these,
++write to the author to ask for permission.  For software which is
++copyrighted by the Free Software Foundation, write to the Free
++Software Foundation; we sometimes make exceptions for this.  Our
++decision will be guided by the two goals of preserving the free status
++of all derivatives of our free software and of promoting the sharing
++and reuse of software generally.
++
++                            NO WARRANTY
++
++  15. BECAUSE THE LIBRARY IS LICENSED FREE OF CHARGE, THERE IS NO
++WARRANTY FOR THE LIBRARY, TO THE EXTENT PERMITTED BY APPLICABLE LAW.
++EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR
++OTHER PARTIES PROVIDE THE LIBRARY "AS IS" WITHOUT WARRANTY OF ANY
++KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE
++IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
++PURPOSE.  THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE
++LIBRARY IS WITH YOU.  SHOULD THE LIBRARY PROVE DEFECTIVE, YOU ASSUME
++THE COST OF ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
++
++  16. IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN
++WRITING WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MAY MODIFY
++AND/OR REDISTRIBUTE THE LIBRARY AS PERMITTED ABOVE, BE LIABLE TO YOU
++FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR
++CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE THE
++LIBRARY (INCLUDING BUT NOT LIMITED TO LOSS OF DATA OR DATA BEING
++RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD PARTIES OR A
++FAILURE OF THE LIBRARY TO OPERATE WITH ANY OTHER SOFTWARE), EVEN IF
++SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH
++DAMAGES.
++
++                     END OF TERMS AND CONDITIONS
++
++           How to Apply These Terms to Your New Libraries
++
++  If you develop a new library, and you want it to be of the greatest
++possible use to the public, we recommend making it free software that
++everyone can redistribute and change.  You can do so by permitting
++redistribution under these terms (or, alternatively, under the terms of the
++ordinary General Public License).
++
++  To apply these terms, attach the following notices to the library.  It is
++safest to attach them to the start of each source file to most effectively
++convey the exclusion of warranty; and each file should have at least the
++"copyright" line and a pointer to where the full notice is found.
++
++    <one line to give the library's name and a brief idea of what it does.>
++    Copyright (C) <year>  <name of author>
++
++    This library is free software; you can redistribute it and/or
++    modify it under the terms of the GNU Lesser General Public
++    License as published by the Free Software Foundation; either
++    version 2.1 of the License, or (at your option) any later version.
++
++    This library is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++    Lesser General Public License for more details.
++
++    You should have received a copy of the GNU Lesser General Public
++    License along with this library; if not, write to the Free Software
++    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++
++Also add information on how to contact you by electronic and paper mail.
++
++You should also get your employer (if you work as a programmer) or your
++school, if any, to sign a "copyright disclaimer" for the library, if
++necessary.  Here is a sample; alter the names:
++
++  Yoyodyne, Inc., hereby disclaims all copyright interest in the
++  library `Frob' (a library for tweaking knobs) written by James Random Hacker.
++
++  <signature of Ty Coon>, 1 April 1990
++  Ty Coon, President of Vice
++
++That's all there is to it!
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/bluez/sbc_decoder.c lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bluez/sbc_decoder.c
+--- repo_avn/external/bluetooth/bluedroid/bluez/sbc_decoder.c	1970-01-01 09:00:00.000000000 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bluez/sbc_decoder.c	2017-07-05 13:29:54.227037000 +0900
+@@ -0,0 +1,1075 @@
++/******************************************************************************
++ *
++ *  Bluetooth low-complexity, subband codec (SBC) library
++ *
++ *  Copyright (C) 2014  Tieto Corporation
++ *  Copyright (C) 2008-2010  Nokia Corporation
++ *  Copyright (C) 2004-2010  Marcel Holtmann <marcel@holtmann.org>
++ *  Copyright (C) 2004-2005  Henryk Ploetz <henryk@ploetzli.ch>
++ *  Copyright (C) 2005-2008  Brad Midgley <bmidgley@xmission.com>
++ *
++ *
++ *  This library is free software; you can redistribute it and/or
++ *  modify it under the terms of the GNU Lesser General Public
++ *  License as published by the Free Software Foundation; either
++ *  version 2.1 of the License, or (at your option) any later version.
++ *
++ *  This library is distributed in the hope that it will be useful,
++ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ *  Lesser General Public License for more details.
++ *
++ *  You should have received a copy of the GNU Lesser General Public
++ *  License along with this library; if not, write to the Free Software
++ *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
++ *
++ */
++
++/******************************************************************************
++ *
++ *  contains code for decoder flow and initalization of decoder
++ *
++ ******************************************************************************/
++#include <string.h>
++#include <stdlib.h>
++#include "sbc_decoder.h"
++#include "../../../bluedroid/include/bt_trace.h"
++
++#define fabs(x) ((x) < 0 ? -(x) : (x))
++#define ASR(val, bits) ((-2 >> 1 == -1) ? \
++         ((int)(val)) >> (bits) : ((int) (val)) / (1 << (bits)))
++#define SCALE_SPROTO4_TBL    12
++#define SCALE_SPROTO8_TBL    14
++#define SCALE_NPROTO4_TBL    11
++#define SCALE_NPROTO8_TBL    11
++#define SCALE4_STAGED1_BITS    15
++#define SCALE4_STAGED2_BITS    16
++#define SCALE8_STAGED1_BITS    15
++#define SCALE8_STAGED2_BITS    16
++typedef int sbc_fixed_t;
++#define SCALE4_STAGED1(src) ASR(src, SCALE4_STAGED1_BITS)
++#define SCALE4_STAGED2(src) ASR(src, SCALE4_STAGED2_BITS)
++#define SCALE8_STAGED1(src) ASR(src, SCALE8_STAGED1_BITS)
++#define SCALE8_STAGED2(src) ASR(src, SCALE8_STAGED2_BITS)
++#define SBC_FIXED_0(val) { val = 0; }
++#define MUL(a, b)        ((a) * (b))
++#if defined(__arm__) && (!defined(__thumb__) || defined(__thumb2__))
++#define MULA(a, b, res) ({                \
++        int tmp = res;            \
++        __asm__(                \
++            "mla %0, %2, %3, %0"        \
++            : "=&r" (tmp)            \
++            : "0" (tmp), "r" (a), "r" (b));    \
++        tmp; })
++#else
++#define MULA(a, b, res)  ((a) * (b) + (res))
++#endif
++
++#define    EPERM           1    /* Operation not permitted */
++#define    ENOENT          2    /* No such file or directory */
++#define    ESRCH           3    /* No such process */
++#define    EINTR           4    /* Interrupted system call */
++#define    EIO             5    /* I/O error */
++#define    ENXIO           6    /* No such device or address */
++#define    E2BIG           7    /* Argument list too long */
++#define    ENOEXEC         8    /* Exec format error */
++#define    EBADF           9    /* Bad file number */
++#define    ECHILD          10    /* No child processes */
++#define    EAGAIN          11    /* Try again */
++#define    ENOMEM          12    /* Out of memory */
++#define    EACCES          13    /* Permission denied */
++#define    EFAULT          14    /* Bad address */
++#define    ENOTBLK         15    /* Block device required */
++#define    EBUSY           16    /* Device or resource busy */
++#define    EEXIST          17    /* File exists */
++#define    EXDEV           18    /* Cross-device link */
++#define    ENODEV          19    /* No such device */
++#define    ENOTDIR         20    /* Not a directory */
++#define    EISDIR          21    /* Is a directory */
++#define    EINVAL          22    /* Invalid argument */
++#define    ENFILE          23    /* File table overflow */
++#define    EMFILE          24    /* Too many open files */
++#define    ENOTTY          25    /* Not a typewriter */
++#define    ETXTBSY         26    /* Text file busy */
++#define    EFBIG           27    /* File too large */
++#define    ENOSPC          28    /* No space left on device */
++#define    ESPIPE          29    /* Illegal seek */
++#define    EROFS           30    /* Read-only file system */
++#define    EMLINK          31    /* Too many links */
++#define    EPIPE           32    /* Broken pipe */
++#define    EDOM            33    /* Math argument out of domain of func */
++#define    ERANGE          34    /* Math result not representable */
++#define SBC_BLK_4        0x00
++#define SBC_BLK_8        0x01
++#define SBC_BLK_12      0x02
++#define SBC_BLK_16      0x03
++#define SBC_SB_4         0x00
++#define SBC_SB_8         0x01
++#define SBC_FREQ_16000        0x00
++#define SBC_FREQ_32000        0x01
++#define SBC_FREQ_44100        0x02
++#define SBC_FREQ_48000        0x03
++#define SBC_MODE_MONO         0x00
++#define SBC_MODE_DUAL_CHANNEL    0x01
++#define SBC_MODE_STEREO          0x02
++#define SBC_MODE_JOINT_STEREO    0x03
++#define SBC_ALIGN_BITS 4
++#define SBC_ALIGN_MASK ((1 << (SBC_ALIGN_BITS)) - 1)
++#define SBC_SYNCWORD    0x9C
++#define SBC_LE                 0x00
++#define SBC_BE                 0x01
++#ifdef __GNUC__
++#define SBC_ALIGNED __attribute__((aligned(1 << (SBC_ALIGN_BITS))))
++#else
++#define SBC_ALIGNED
++#endif
++
++
++struct sbc_decoder_state {
++    int subbands;
++    int V[2][170];
++    int offset[2][16];
++};
++struct sbc_struct {
++    unsigned long flags;
++    unsigned char frequency;
++    unsigned char blocks;
++    unsigned char subbands;
++    unsigned char mode;
++    unsigned char allocation;
++    unsigned char bitpool;
++    unsigned char endian;
++    void *priv;
++    void *priv_alloc_base;
++};
++typedef struct sbc_struct sbc_t;
++struct sbc_frame {
++    unsigned char frequency;
++    unsigned char block_mode;
++    unsigned char blocks;
++    enum {
++        MONO        = SBC_MONO,
++        DUAL_CHANNEL    = SBC_DUAL,
++        STEREO        = SBC_STEREO,
++        JOINT_STEREO    = SBC_JOINT_STEREO
++    } mode;
++    unsigned char channels;
++    enum {
++        LOUDNESS    = SBC_LOUDNESS,
++        SNR        = SBC_SNR
++    } allocation;
++    unsigned char subband_mode;
++    unsigned char subbands;
++    unsigned char bitpool;
++    unsigned short codesize;
++    unsigned char length;
++    unsigned char joint;
++    unsigned int scale_factor[2][8];
++    int sb_sample_f[16][2][8];
++    int sb_sample[16][2][8];
++    short pcm_sample[2][16*8];
++};
++struct sbc_priv {
++    int init;
++    struct  sbc_frame frame;
++    struct  sbc_decoder_state dec_state;
++};
++static const int sbc_offset4[4][4] = {
++        { -1, 0, 0, 0 },
++        { -2, 0, 0, 1 },
++        { -2, 0, 0, 1 },
++        { -2, 0, 0, 1 }
++};
++static const int sbc_offset8[4][8] = {
++        { -2, 0, 0, 0, 0, 0, 0, 1 },
++        { -3, 0, 0, 0, 0, 0, 1, 2 },
++        { -4, 0, 0, 0, 0, 0, 1, 2 },
++        { -4, 0, 0, 0, 0, 0, 1, 2 }
++};
++#define SBCDEC_FIXED_EXTRA_BITS 2
++#define SS4(val) ASR(val, SCALE_SPROTO4_TBL)
++#define SS8(val) ASR(val, SCALE_SPROTO8_TBL)
++#define SN4(val) ASR(val, SCALE_NPROTO4_TBL + 1 + SBCDEC_FIXED_EXTRA_BITS)
++#define SN8(val) ASR(val, SCALE_NPROTO8_TBL + 1 + SBCDEC_FIXED_EXTRA_BITS)
++static const int sbc_proto_4_40m0[] = {
++        SS4(0x00000000), SS4(0xffa6982f), SS4(0xfba93848), SS4(0x0456c7b8),
++        SS4(0x005967d1), SS4(0xfffb9ac7), SS4(0xff589157), SS4(0xf9c2a8d8),
++        SS4(0x027c1434), SS4(0x0019118b), SS4(0xfff3c74c), SS4(0xff137330),
++        SS4(0xf81b8d70), SS4(0x00ec1b8b), SS4(0xfff0b71a), SS4(0xffe99b00),
++        SS4(0xfef84470), SS4(0xf6fb4370), SS4(0xffcdc351), SS4(0xffe01dc7)
++};
++static const int sbc_proto_4_40m1[] = {
++        SS4(0xffe090ce), SS4(0xff2c0475), SS4(0xf694f800), SS4(0xff2c0475),
++        SS4(0xffe090ce), SS4(0xffe01dc7), SS4(0xffcdc351), SS4(0xf6fb4370),
++        SS4(0xfef84470), SS4(0xffe99b00), SS4(0xfff0b71a), SS4(0x00ec1b8b),
++        SS4(0xf81b8d70), SS4(0xff137330), SS4(0xfff3c74c), SS4(0x0019118b),
++        SS4(0x027c1434), SS4(0xf9c2a8d8), SS4(0xff589157), SS4(0xfffb9ac7)
++};
++static const int sbc_proto_8_80m0[] = {
++        SS8(0x00000000), SS8(0xfe8d1970), SS8(0xee979f00), SS8(0x11686100),
++        SS8(0x0172e690), SS8(0xfff5bd1a), SS8(0xfdf1c8d4), SS8(0xeac182c0),
++        SS8(0x0d9daee0), SS8(0x00e530da), SS8(0xffe9811d), SS8(0xfd52986c),
++        SS8(0xe7054ca0), SS8(0x0a00d410), SS8(0x006c1de4), SS8(0xffdba705),
++        SS8(0xfcbc98e8), SS8(0xe3889d20), SS8(0x06af2308), SS8(0x000bb7db),
++        SS8(0xffca00ed), SS8(0xfc3fbb68), SS8(0xe071bc00), SS8(0x03bf7948),
++        SS8(0xffc4e05c), SS8(0xffb54b3b), SS8(0xfbedadc0), SS8(0xdde26200),
++        SS8(0x0142291c), SS8(0xff960e94), SS8(0xff9f3e17), SS8(0xfbd8f358),
++        SS8(0xdbf79400), SS8(0xff405e01), SS8(0xff7d4914), SS8(0xff8b1a31),
++        SS8(0xfc1417b8), SS8(0xdac7bb40), SS8(0xfdbb828c), SS8(0xff762170)
++};
++static const int sbc_proto_8_80m1[] = {
++    SS8(0xff7c272c), SS8(0xfcb02620), SS8(0xda612700), SS8(0xfcb02620),
++    SS8(0xff7c272c), SS8(0xff762170), SS8(0xfdbb828c), SS8(0xdac7bb40),
++    SS8(0xfc1417b8), SS8(0xff8b1a31), SS8(0xff7d4914), SS8(0xff405e01),
++    SS8(0xdbf79400), SS8(0xfbd8f358), SS8(0xff9f3e17), SS8(0xff960e94),
++    SS8(0x0142291c), SS8(0xdde26200), SS8(0xfbedadc0), SS8(0xffb54b3b),
++    SS8(0xffc4e05c), SS8(0x03bf7948), SS8(0xe071bc00), SS8(0xfc3fbb68),
++    SS8(0xffca00ed), SS8(0x000bb7db), SS8(0x06af2308), SS8(0xe3889d20),
++    SS8(0xfcbc98e8), SS8(0xffdba705), SS8(0x006c1de4), SS8(0x0a00d410),
++    SS8(0xe7054ca0), SS8(0xfd52986c), SS8(0xffe9811d), SS8(0x00e530da),
++    SS8(0x0d9daee0), SS8(0xeac182c0), SS8(0xfdf1c8d4), SS8(0xfff5bd1a)
++};
++static const int synmatrix4[8][4] = {
++    { SN4(0x05a82798), SN4(0xfa57d868), SN4(0xfa57d868), SN4(0x05a82798) },
++    { SN4(0x030fbc54), SN4(0xf89be510), SN4(0x07641af0), SN4(0xfcf043ac) },
++    { SN4(0x00000000), SN4(0x00000000), SN4(0x00000000), SN4(0x00000000) },
++    { SN4(0xfcf043ac), SN4(0x07641af0), SN4(0xf89be510), SN4(0x030fbc54) },
++    { SN4(0xfa57d868), SN4(0x05a82798), SN4(0x05a82798), SN4(0xfa57d868) },
++    { SN4(0xf89be510), SN4(0xfcf043ac), SN4(0x030fbc54), SN4(0x07641af0) },
++    { SN4(0xf8000000), SN4(0xf8000000), SN4(0xf8000000), SN4(0xf8000000) },
++    { SN4(0xf89be510), SN4(0xfcf043ac), SN4(0x030fbc54), SN4(0x07641af0) }
++};
++static const int synmatrix8[16][8] = {
++    { SN8(0x05a82798), SN8(0xfa57d868), SN8(0xfa57d868), SN8(0x05a82798),
++      SN8(0x05a82798), SN8(0xfa57d868), SN8(0xfa57d868), SN8(0x05a82798) },
++    { SN8(0x0471ced0), SN8(0xf8275a10), SN8(0x018f8b84), SN8(0x06a6d988),
++      SN8(0xf9592678), SN8(0xfe70747c), SN8(0x07d8a5f0), SN8(0xfb8e3130) },
++    { SN8(0x030fbc54), SN8(0xf89be510), SN8(0x07641af0), SN8(0xfcf043ac),
++      SN8(0xfcf043ac), SN8(0x07641af0), SN8(0xf89be510), SN8(0x030fbc54) },
++    { SN8(0x018f8b84), SN8(0xfb8e3130), SN8(0x06a6d988), SN8(0xf8275a10),
++      SN8(0x07d8a5f0), SN8(0xf9592678), SN8(0x0471ced0), SN8(0xfe70747c) },
++    { SN8(0x00000000), SN8(0x00000000), SN8(0x00000000), SN8(0x00000000),
++      SN8(0x00000000), SN8(0x00000000), SN8(0x00000000), SN8(0x00000000) },
++    { SN8(0xfe70747c), SN8(0x0471ced0), SN8(0xf9592678), SN8(0x07d8a5f0),
++      SN8(0xf8275a10), SN8(0x06a6d988), SN8(0xfb8e3130), SN8(0x018f8b84) },
++    { SN8(0xfcf043ac), SN8(0x07641af0), SN8(0xf89be510), SN8(0x030fbc54),
++      SN8(0x030fbc54), SN8(0xf89be510), SN8(0x07641af0), SN8(0xfcf043ac) },
++    { SN8(0xfb8e3130), SN8(0x07d8a5f0), SN8(0xfe70747c), SN8(0xf9592678),
++      SN8(0x06a6d988), SN8(0x018f8b84), SN8(0xf8275a10), SN8(0x0471ced0) },
++    { SN8(0xfa57d868), SN8(0x05a82798), SN8(0x05a82798), SN8(0xfa57d868),
++      SN8(0xfa57d868), SN8(0x05a82798), SN8(0x05a82798), SN8(0xfa57d868) },
++    { SN8(0xf9592678), SN8(0x018f8b84), SN8(0x07d8a5f0), SN8(0x0471ced0),
++      SN8(0xfb8e3130), SN8(0xf8275a10), SN8(0xfe70747c), SN8(0x06a6d988) },
++    { SN8(0xf89be510), SN8(0xfcf043ac), SN8(0x030fbc54), SN8(0x07641af0),
++      SN8(0x07641af0), SN8(0x030fbc54), SN8(0xfcf043ac), SN8(0xf89be510) },
++    { SN8(0xf8275a10), SN8(0xf9592678), SN8(0xfb8e3130), SN8(0xfe70747c),
++      SN8(0x018f8b84), SN8(0x0471ced0), SN8(0x06a6d988), SN8(0x07d8a5f0) },
++    { SN8(0xf8000000), SN8(0xf8000000), SN8(0xf8000000), SN8(0xf8000000),
++      SN8(0xf8000000), SN8(0xf8000000), SN8(0xf8000000), SN8(0xf8000000) },
++    { SN8(0xf8275a10), SN8(0xf9592678), SN8(0xfb8e3130), SN8(0xfe70747c),
++      SN8(0x018f8b84), SN8(0x0471ced0), SN8(0x06a6d988), SN8(0x07d8a5f0) },
++    { SN8(0xf89be510), SN8(0xfcf043ac), SN8(0x030fbc54), SN8(0x07641af0),
++      SN8(0x07641af0), SN8(0x030fbc54), SN8(0xfcf043ac), SN8(0xf89be510) },
++    { SN8(0xf9592678), SN8(0x018f8b84), SN8(0x07d8a5f0), SN8(0x0471ced0),
++      SN8(0xfb8e3130), SN8(0xf8275a10), SN8(0xfe70747c), SN8(0x06a6d988) }
++};
++/*
++ * Calculates the CRC-8 of the first len bits in data
++ */
++static const unsigned char crc_table[256] = {
++    0x00, 0x1D, 0x3A, 0x27, 0x74, 0x69, 0x4E, 0x53,
++    0xE8, 0xF5, 0xD2, 0xCF, 0x9C, 0x81, 0xA6, 0xBB,
++    0xCD, 0xD0, 0xF7, 0xEA, 0xB9, 0xA4, 0x83, 0x9E,
++    0x25, 0x38, 0x1F, 0x02, 0x51, 0x4C, 0x6B, 0x76,
++    0x87, 0x9A, 0xBD, 0xA0, 0xF3, 0xEE, 0xC9, 0xD4,
++    0x6F, 0x72, 0x55, 0x48, 0x1B, 0x06, 0x21, 0x3C,
++    0x4A, 0x57, 0x70, 0x6D, 0x3E, 0x23, 0x04, 0x19,
++    0xA2, 0xBF, 0x98, 0x85, 0xD6, 0xCB, 0xEC, 0xF1,
++    0x13, 0x0E, 0x29, 0x34, 0x67, 0x7A, 0x5D, 0x40,
++    0xFB, 0xE6, 0xC1, 0xDC, 0x8F, 0x92, 0xB5, 0xA8,
++    0xDE, 0xC3, 0xE4, 0xF9, 0xAA, 0xB7, 0x90, 0x8D,
++    0x36, 0x2B, 0x0C, 0x11, 0x42, 0x5F, 0x78, 0x65,
++    0x94, 0x89, 0xAE, 0xB3, 0xE0, 0xFD, 0xDA, 0xC7,
++    0x7C, 0x61, 0x46, 0x5B, 0x08, 0x15, 0x32, 0x2F,
++    0x59, 0x44, 0x63, 0x7E, 0x2D, 0x30, 0x17, 0x0A,
++    0xB1, 0xAC, 0x8B, 0x96, 0xC5, 0xD8, 0xFF, 0xE2,
++    0x26, 0x3B, 0x1C, 0x01, 0x52, 0x4F, 0x68, 0x75,
++    0xCE, 0xD3, 0xF4, 0xE9, 0xBA, 0xA7, 0x80, 0x9D,
++    0xEB, 0xF6, 0xD1, 0xCC, 0x9F, 0x82, 0xA5, 0xB8,
++    0x03, 0x1E, 0x39, 0x24, 0x77, 0x6A, 0x4D, 0x50,
++    0xA1, 0xBC, 0x9B, 0x86, 0xD5, 0xC8, 0xEF, 0xF2,
++    0x49, 0x54, 0x73, 0x6E, 0x3D, 0x20, 0x07, 0x1A,
++    0x6C, 0x71, 0x56, 0x4B, 0x18, 0x05, 0x22, 0x3F,
++    0x84, 0x99, 0xBE, 0xA3, 0xF0, 0xED, 0xCA, 0xD7,
++    0x35, 0x28, 0x0F, 0x12, 0x41, 0x5C, 0x7B, 0x66,
++    0xDD, 0xC0, 0xE7, 0xFA, 0xA9, 0xB4, 0x93, 0x8E,
++    0xF8, 0xE5, 0xC2, 0xDF, 0x8C, 0x91, 0xB6, 0xAB,
++    0x10, 0x0D, 0x2A, 0x37, 0x64, 0x79, 0x5E, 0x43,
++    0xB2, 0xAF, 0x88, 0x95, 0xC6, 0xDB, 0xFC, 0xE1,
++    0x5A, 0x47, 0x60, 0x7D, 0x2E, 0x33, 0x14, 0x09,
++    0x7F, 0x62, 0x45, 0x58, 0x0B, 0x16, 0x31, 0x2C,
++    0x97, 0x8A, 0xAD, 0xB0, 0xE3, 0xFE, 0xD9, 0xC4
++};
++
++static unsigned char sbc_crc8(const unsigned char *data, unsigned int len);
++static void sbc_set_defaults(sbc_t *sbc, unsigned long flags);
++static unsigned int sbc_get_codesize(sbc_t *sbc);
++//static int sbc_init(sbc_t *sbc, unsigned long flags);
++int sbc_init(sbc_t *sbc, unsigned long flags);
++static unsigned int sbc_parse(sbc_t *sbc, const void *input, unsigned int input_len);
++//static unsigned int sbc_decode(sbc_t *sbc, const void *input, unsigned int input_len,
++//                         void *output, unsigned int output_len, unsigned int *written);
++unsigned int sbc_decode(sbc_t *sbc, const void *input, unsigned int input_len,
++                         void *output, unsigned int output_len, unsigned int *written);
++static inline void sbc_dec_copy_pcmbuffer(SBC_DEC_PARAMS * pDestPcmBuffer, struct sbc_frame *pSrcPcm, int len);
++static int sbc_unpack_frame(const unsigned char *data, struct sbc_frame *frame,
++                            unsigned int len);
++static void sbc_decoder_init(struct sbc_decoder_state *state,
++                             const struct sbc_frame *frame);
++static inline short sbc_clip16(int s);
++static inline void sbc_synthesize_four(struct sbc_decoder_state *state,
++                                       struct sbc_frame *frame, int ch, int blk);
++static inline void sbc_synthesize_eight(struct sbc_decoder_state *state,
++struct sbc_frame *frame, int ch, int blk);
++static int sbc_synthesize_audio(struct sbc_decoder_state *state,
++                                struct sbc_frame *frame);
++static inline void sbc_calculate_bits_internal(const struct sbc_frame *frame,
++                                               int (*bits)[8], int subbands);
++static void sbc_calculate_bits(const struct sbc_frame *frame, int (*bits)[8]);
++
++static unsigned char sbc_crc8(const unsigned char *data, unsigned int len)
++{
++    unsigned char crc = 0x0f;
++    unsigned int i;
++    unsigned char octet;
++
++    for (i = 0; i < len / 8; i++)
++        crc = crc_table[crc ^ data[i]];
++
++    octet = data[i];
++    for (i = 0; i < len % 8; i++) {
++        char bit = ((octet ^ crc) & 0x80) >> 7;
++
++        crc = ((crc & 0x7f) << 1) ^ (bit ? 0x1d : 0);
++
++        octet = octet << 1;
++    }
++
++    return crc;
++}
++
++static void sbc_set_defaults(sbc_t *sbc, unsigned long flags)
++{
++    sbc->frequency = SBC_sf44100;
++    sbc->mode = SBC_STEREO;
++    sbc->subbands = SBC_SB_8;
++    sbc->blocks = SBC_BLK_16;
++    sbc->bitpool = 32;
++#if __BIG_ENDIAN != TRUE
++    sbc->endian = SBC_LE;
++#else
++    sbc->endian = SBC_BE;
++#endif
++}
++
++unsigned int sbc_get_codesize(sbc_t *sbc)
++{
++    unsigned short subbands, channels, blocks;
++    struct sbc_priv *priv;
++
++    priv = sbc->priv;
++    if (!priv->init) {
++        subbands = sbc->subbands ? 8 : 4;
++        blocks = 4 + (sbc->blocks * 4);
++        channels = sbc->mode == SBC_MONO ? 1 : 2;
++    } else {
++        subbands = priv->frame.subbands;
++        blocks = priv->frame.blocks;
++        channels = priv->frame.channels;
++    }
++
++    return subbands * blocks * channels * 2;
++}
++
++int sbc_init(sbc_t *sbc, unsigned long flags)
++{
++    if (!sbc)
++        return -EIO;
++
++    memset(sbc, 0, sizeof(sbc_t));
++
++    sbc->priv_alloc_base = malloc(sizeof(struct sbc_priv) + SBC_ALIGN_MASK);
++    if (!sbc->priv_alloc_base)
++        return -ENOMEM;
++
++    sbc->priv = (void *) (((unsigned int) sbc->priv_alloc_base +
++            SBC_ALIGN_MASK) & ~((unsigned int) SBC_ALIGN_MASK));
++
++    memset(sbc->priv, 0, sizeof(struct sbc_priv));
++
++    sbc_set_defaults(sbc, flags);
++
++    return 0;
++}
++
++unsigned int sbc_parse(sbc_t *sbc, const void *input, unsigned int input_len)
++{
++    return sbc_decode(sbc, input, input_len, NULL, 0, NULL);
++}
++
++unsigned int sbc_decode(sbc_t *sbc, const void *input, unsigned int input_len,
++            void *output, unsigned int output_len, unsigned int *written)
++{
++    struct sbc_priv *priv;
++    char *ptr;
++    int i, ch, framelen, samples;
++
++    if (!sbc || !input)
++        return -EIO;
++
++    priv = sbc->priv;
++
++    framelen = sbc_unpack_frame(input, &priv->frame, input_len);
++    
++    if (!priv->init) {
++        sbc_decoder_init(&priv->dec_state, &priv->frame);
++        priv->init = 1;
++
++        sbc->frequency = priv->frame.frequency;
++        sbc->mode = priv->frame.mode;
++        sbc->subbands = priv->frame.subband_mode;
++        sbc->blocks = priv->frame.block_mode;
++        sbc->allocation = priv->frame.allocation;
++        sbc->bitpool = priv->frame.bitpool;
++
++        priv->frame.codesize = sbc_get_codesize(sbc);
++        priv->frame.length = framelen;
++    } else if (priv->frame.bitpool != sbc->bitpool) {
++        priv->frame.length = framelen;
++        sbc->bitpool = priv->frame.bitpool;
++    }
++
++    if (!output)
++        return framelen;
++
++    if (written)
++        *written = 0;
++
++    if (framelen <= 0)
++        return framelen;
++
++    samples = sbc_synthesize_audio(&priv->dec_state, &priv->frame);
++
++    ptr = output;
++
++    if (output_len < (unsigned int) (samples * priv->frame.channels * 2))
++        samples = output_len / (priv->frame.channels * 2);
++
++    for (i = 0; i < samples; i++) {
++        for (ch = 0; ch < priv->frame.channels; ch++) {
++            short s;
++            s = priv->frame.pcm_sample[ch][i];
++
++            if (sbc->endian == SBC_BE) {
++                *ptr++ = (s & 0xff00) >> 8;
++                *ptr++ = (s & 0x00ff);
++            } else {
++                *ptr++ = (s & 0x00ff);
++                *ptr++ = (s & 0xff00) >> 8;
++            }
++
++        }
++    }
++
++    if (written)
++        *written = samples * priv->frame.channels * 2;
++
++    return framelen;
++}
++
++static inline void sbc_dec_copy_pcmbuffer(SBC_DEC_PARAMS * pDestPcmBuffer, struct sbc_frame *pSrcPcm, int len)
++{
++    int i=0;
++    int ch=0;
++    short *ptr=pDestPcmBuffer->as16SbBuffer;
++
++    for (i = 0; i < len; i++) {
++        for (ch = 0; ch < pSrcPcm->channels; ch++) {
++            short s;
++            s = pSrcPcm->pcm_sample[ch][i];  //16 bits
++            *ptr++= s;
++        }
++    }
++
++    // len = suband*block
++    pDestPcmBuffer->s16PcmLength= len * pSrcPcm->channels * 2;
++
++}
++
++// SDY --- added for a2dp in android
++int g_init = 0;
++struct sbc_frame g_frame = {0};
++struct sbc_decoder_state g_dec_state = {0};
++
++void SBC_Decoder(SBC_DEC_PARAMS *pstrDecParams)
++{
++    int i=0, ch=0, framelen=0, samples=0;
++    //struct sbc_frame frame={0};
++    //struct sbc_decoder_state dec_state={0};
++
++    if ( !pstrDecParams)
++        return ;
++
++    framelen = sbc_unpack_frame(pstrDecParams->pu8Packet, &g_frame, pstrDecParams->u16PacketLength);
++    pstrDecParams->s16SbcFrameLength= framelen;
++
++    if (g_init == 0) {
++        sbc_decoder_init(&g_dec_state, &g_frame);
++        g_init = 1;
++    }
++    //frame.codesize = sbc_get_codesize(&sbc);
++    g_frame.length = framelen;
++
++    if (framelen <= 0)
++          return ;
++    samples = sbc_synthesize_audio(&g_dec_state, &g_frame);
++    sbc_dec_copy_pcmbuffer(pstrDecParams, &g_frame, samples);
++}
++
++void SBC_Decoder_Init(SBC_DEC_PARAMS *pstrDecParams)
++{
++}
++
++/*
++ * Unpacks a SBC frame at the beginning of the stream in data,
++ * which has at most len bytes into frame.
++ * Returns the length in bytes of the packed frame, or a negative
++ * value on error. The error codes are:
++ *
++ *  -1   Data stream too short
++ *  -2   Sync byte incorrect
++ *  -3   CRC8 incorrect
++ *  -4   Bitpool value out of bounds
++ */
++static int sbc_unpack_frame(const unsigned char *data, struct sbc_frame *frame,
++                                unsigned int len)
++{
++    unsigned int consumed;
++    /* Will copy the parts of the header that are relevant to crc
++     * calculation here */
++    unsigned char crc_header[11] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
++    int crc_pos = 0;
++    int temp;
++
++    int audio_sample;
++    int ch, sb, blk, bit;    /* channel, subband, block and bit standard
++                   counters */
++    int bits[2][8];        /* bits distribution */
++    unsigned int levels[2][8];    /* levels derived from that */
++
++    if (len < 4)
++        return -1;
++
++    if (data[0] != SBC_SYNCWORD)
++        return -2;
++
++    frame->frequency = (data[1] >> 6) & 0x03;
++
++    frame->block_mode = (data[1] >> 4) & 0x03;
++    switch (frame->block_mode) {
++    case SBC_BLK_4:
++        frame->blocks = 4;
++        break;
++    case SBC_BLK_8:
++        frame->blocks = 8;
++        break;
++    case SBC_BLK_12:
++        frame->blocks = 12;
++        break;
++    case SBC_BLK_16:
++        frame->blocks = 16;
++        break;
++    }
++
++    frame->mode = (data[1] >> 2) & 0x03;
++    switch (frame->mode) {
++    case MONO:
++        frame->channels = 1;
++        break;
++    case DUAL_CHANNEL:    /* fall-through */
++    case STEREO:
++    case JOINT_STEREO:
++        frame->channels = 2;
++        break;
++    }
++
++    frame->allocation = (data[1] >> 1) & 0x01;
++
++    frame->subband_mode = (data[1] & 0x01);
++    frame->subbands = frame->subband_mode ? 8 : 4;
++
++    frame->bitpool = data[2];
++
++    if ((frame->mode == MONO || frame->mode == DUAL_CHANNEL) &&
++            frame->bitpool > 16 * frame->subbands)
++        return -4;
++
++    if ((frame->mode == STEREO || frame->mode == JOINT_STEREO) &&
++            frame->bitpool > 32 * frame->subbands)
++        return -4;
++
++    /* data[3] is crc, we're checking it later */
++
++    consumed = 32;
++
++    crc_header[0] = data[1];
++    crc_header[1] = data[2];
++    crc_pos = 16;
++
++    if (frame->mode == JOINT_STEREO) {
++        if (len * 8 < consumed + frame->subbands)
++            return -1;
++
++        frame->joint = 0x00;
++        for (sb = 0; sb < frame->subbands - 1; sb++)
++            frame->joint |= ((data[4] >> (7 - sb)) & 0x01) << sb;
++
++        if (frame->subbands == 4)
++            crc_header[crc_pos / 8] = data[4] & 0xf0;
++        else
++            crc_header[crc_pos / 8] = data[4];
++
++        consumed += frame->subbands;
++        crc_pos += frame->subbands;
++    }
++
++    if (len * 8 < consumed + (4 * frame->subbands * frame->channels))
++        return -1;
++
++
++    for (ch = 0; ch < frame->channels; ch++) {
++        for (sb = 0; sb < frame->subbands; sb++) {
++            /* FIXME assert(consumed % 4 == 0); */
++            frame->scale_factor[ch][sb] =
++                (data[consumed >> 3] >> (4 - (consumed & 0x7))) & 0x0F;
++
++            crc_header[crc_pos >> 3] |=
++                frame->scale_factor[ch][sb] << (4 - (crc_pos & 0x7));
++
++            consumed += 4;
++            crc_pos += 4;
++        }
++    }
++
++    if (data[3] != sbc_crc8(crc_header, crc_pos))
++        return -3;
++
++    sbc_calculate_bits(frame, bits);
++
++    for (ch = 0; ch < frame->channels; ch++) {
++        for (sb = 0; sb < frame->subbands; sb++){
++                  levels[ch][sb] = (1 << bits[ch][sb]) - 1;
++        }
++    }
++
++
++    for (blk = 0; blk < frame->blocks; blk++) {
++        for (ch = 0; ch < frame->channels; ch++) {
++            for (sb = 0; sb < frame->subbands; sb++) {
++                unsigned int shift;
++
++                if (levels[ch][sb] == 0) {
++                    frame->sb_sample[blk][ch][sb] = 0;
++                    continue;
++                }
++
++                shift = frame->scale_factor[ch][sb] +
++                        1 + SBCDEC_FIXED_EXTRA_BITS;
++
++                audio_sample = 0;
++                for (bit = 0; bit < bits[ch][sb]; bit++) {
++                    if (consumed > len * 8)
++                        return -1;
++
++                    if ((data[consumed >> 3] >> (7 - (consumed & 0x7))) & 0x01)
++                        audio_sample |= 1 << (bits[ch][sb] - bit - 1);
++
++                    consumed++;
++                }
++
++                frame->sb_sample[blk][ch][sb] = (int)
++                    (((((unsigned long long) audio_sample << 1) | 1) << shift) /
++                    levels[ch][sb]) - (1 << shift);
++            }
++        }
++    }
++
++
++    if (frame->mode == SBC_JOINT_STEREO) {
++        for (blk = 0; blk < frame->blocks; blk++) {
++            for (sb = 0; sb < frame->subbands; sb++) {
++                if (frame->joint & (0x01 << sb)) {
++                    temp = frame->sb_sample[blk][0][sb] +
++                        frame->sb_sample[blk][1][sb];
++                    frame->sb_sample[blk][1][sb] =
++                        frame->sb_sample[blk][0][sb] -
++                        frame->sb_sample[blk][1][sb];
++                    frame->sb_sample[blk][0][sb] = temp;
++                }
++            }
++        }
++    }
++
++    if ((consumed & 0x7) != 0)
++        consumed += 8 - (consumed & 0x7);
++
++    return consumed >> 3;
++}
++
++static void sbc_decoder_init(struct sbc_decoder_state *state,
++                    const struct sbc_frame *frame)
++{
++    int i, ch;
++
++    memset(state->V, 0, sizeof(state->V));
++    state->subbands = frame->subbands;
++
++    for (ch = 0; ch < 2; ch++)
++        for (i = 0; i < frame->subbands * 2; i++)
++            state->offset[ch][i] = (10 * i + 10);
++}
++
++static inline short sbc_clip16(int s)
++{
++    if (s > 0x7FFF)
++        return 0x7FFF;
++    else if (s < -0x8000)
++        return -0x8000;
++    else
++        return s;
++}
++
++static inline void sbc_synthesize_four(struct sbc_decoder_state *state,
++                struct sbc_frame *frame, int ch, int blk)
++{
++    int i, k, idx;
++    int *v = state->V[ch];
++    int *offset = state->offset[ch];
++
++    for (i = 0; i < 8; i++) {
++        /* Shifting */
++        offset[i]--;
++        if (offset[i] < 0) {
++            offset[i] = 79;
++            memcpy(v + 80, v, 9 * sizeof(*v));
++        }
++
++        /* Distribute the new matrix value to the shifted position */
++        v[offset[i]] = SCALE4_STAGED1(
++            MULA(synmatrix4[i][0], frame->sb_sample[blk][ch][0],
++            MULA(synmatrix4[i][1], frame->sb_sample[blk][ch][1],
++            MULA(synmatrix4[i][2], frame->sb_sample[blk][ch][2],
++            MUL (synmatrix4[i][3], frame->sb_sample[blk][ch][3])))));
++    }
++
++    /* Compute the samples */
++    for (idx = 0, i = 0; i < 4; i++, idx += 5) {
++        k = (i + 4) & 0xf;
++
++        /* Store in output, Q0 */
++        frame->pcm_sample[ch][blk * 4 + i] = sbc_clip16(SCALE4_STAGED1(
++            MULA(v[offset[i] + 0], sbc_proto_4_40m0[idx + 0],
++            MULA(v[offset[k] + 1], sbc_proto_4_40m1[idx + 0],
++            MULA(v[offset[i] + 2], sbc_proto_4_40m0[idx + 1],
++            MULA(v[offset[k] + 3], sbc_proto_4_40m1[idx + 1],
++            MULA(v[offset[i] + 4], sbc_proto_4_40m0[idx + 2],
++            MULA(v[offset[k] + 5], sbc_proto_4_40m1[idx + 2],
++            MULA(v[offset[i] + 6], sbc_proto_4_40m0[idx + 3],
++            MULA(v[offset[k] + 7], sbc_proto_4_40m1[idx + 3],
++            MULA(v[offset[i] + 8], sbc_proto_4_40m0[idx + 4],
++            MUL( v[offset[k] + 9], sbc_proto_4_40m1[idx + 4]))))))))))));
++    }
++}
++
++static inline void sbc_synthesize_eight(struct sbc_decoder_state *state,
++                struct sbc_frame *frame, int ch, int blk)
++{
++    int i, j, k, idx;
++    int *offset = state->offset[ch];
++
++    for (i = 0; i < 16; i++) {
++        /* Shifting */
++        offset[i]--;
++        if (offset[i] < 0) {
++            offset[i] = 159;
++            for (j = 0; j < 9; j++)
++                state->V[ch][j + 160] = state->V[ch][j];
++        }
++
++        /* Distribute the new matrix value to the shifted position */
++        state->V[ch][offset[i]] = SCALE8_STAGED1(
++            MULA(synmatrix8[i][0], frame->sb_sample[blk][ch][0],
++            MULA(synmatrix8[i][1], frame->sb_sample[blk][ch][1],
++            MULA(synmatrix8[i][2], frame->sb_sample[blk][ch][2],
++            MULA(synmatrix8[i][3], frame->sb_sample[blk][ch][3],
++            MULA(synmatrix8[i][4], frame->sb_sample[blk][ch][4],
++            MULA(synmatrix8[i][5], frame->sb_sample[blk][ch][5],
++            MULA(synmatrix8[i][6], frame->sb_sample[blk][ch][6],
++            MUL( synmatrix8[i][7], frame->sb_sample[blk][ch][7])))))))));
++    }
++
++    /* Compute the samples */
++    for (idx = 0, i = 0; i < 8; i++, idx += 5) {
++        k = (i + 8) & 0xf;
++
++        /* Store in output, Q0 */
++        frame->pcm_sample[ch][blk * 8 + i] = sbc_clip16(SCALE8_STAGED1(
++            MULA(state->V[ch][offset[i] + 0], sbc_proto_8_80m0[idx + 0],
++            MULA(state->V[ch][offset[k] + 1], sbc_proto_8_80m1[idx + 0],
++            MULA(state->V[ch][offset[i] + 2], sbc_proto_8_80m0[idx + 1],
++            MULA(state->V[ch][offset[k] + 3], sbc_proto_8_80m1[idx + 1],
++            MULA(state->V[ch][offset[i] + 4], sbc_proto_8_80m0[idx + 2],
++            MULA(state->V[ch][offset[k] + 5], sbc_proto_8_80m1[idx + 2],
++            MULA(state->V[ch][offset[i] + 6], sbc_proto_8_80m0[idx + 3],
++            MULA(state->V[ch][offset[k] + 7], sbc_proto_8_80m1[idx + 3],
++            MULA(state->V[ch][offset[i] + 8], sbc_proto_8_80m0[idx + 4],
++            MUL( state->V[ch][offset[k] + 9], sbc_proto_8_80m1[idx + 4]))))))))))));
++    }
++}
++
++static int sbc_synthesize_audio(struct sbc_decoder_state *state,
++                        struct sbc_frame *frame)
++{
++    int ch, blk;
++
++    switch (frame->subbands) {
++    case 4:
++        for (ch = 0; ch < frame->channels; ch++) {
++            for (blk = 0; blk < frame->blocks; blk++)
++                sbc_synthesize_four(state, frame, ch, blk);
++        }
++        return frame->blocks * 4;
++
++    case 8:
++        for (ch = 0; ch < frame->channels; ch++) {
++            for (blk = 0; blk < frame->blocks; blk++)
++                sbc_synthesize_eight(state, frame, ch, blk);
++        }
++        return frame->blocks * 8;
++
++    default:
++        return -EIO;
++    }
++}
++
++/*
++ * Code straight from the spec to calculate the bits array
++ * Takes a pointer to the frame in question, a pointer to the bits array and
++ * the sampling frequency (as 2 bit integer)
++ */
++static inline void sbc_calculate_bits_internal(
++        const struct sbc_frame *frame, int (*bits)[8], int subbands)
++{
++    unsigned char sf = frame->frequency;
++
++    if (frame->mode == SBC_MONO|| frame->mode == SBC_DUAL) {
++        int bitneed[2][8], loudness, max_bitneed, bitcount, slicecount, bitslice;
++        int ch, sb;
++
++        for (ch = 0; ch < frame->channels; ch++) {
++            max_bitneed = 0;
++            if (frame->allocation == SBC_SNR) {
++                for (sb = 0; sb < subbands; sb++) {
++                    bitneed[ch][sb] = frame->scale_factor[ch][sb];
++                    if (bitneed[ch][sb] > max_bitneed)
++                        max_bitneed = bitneed[ch][sb];
++                }
++            } else {
++                for (sb = 0; sb < subbands; sb++) {
++                    if (frame->scale_factor[ch][sb] == 0)
++                        bitneed[ch][sb] = -5;
++                    else {
++                        if (subbands == 4)
++                            loudness = frame->scale_factor[ch][sb] - sbc_offset4[sf][sb];
++                        else
++                            loudness = frame->scale_factor[ch][sb] - sbc_offset8[sf][sb];
++                        if (loudness > 0)
++                            bitneed[ch][sb] = loudness / 2;
++                        else
++                            bitneed[ch][sb] = loudness;
++                    }
++                    if (bitneed[ch][sb] > max_bitneed)
++                        max_bitneed = bitneed[ch][sb];
++                }
++            }
++
++            bitcount = 0;
++            slicecount = 0;
++            bitslice = max_bitneed + 1;
++            do {
++                bitslice--;
++                bitcount += slicecount;
++                slicecount = 0;
++                for (sb = 0; sb < subbands; sb++) {
++                    if ((bitneed[ch][sb] > bitslice + 1) && (bitneed[ch][sb] < bitslice + 16))
++                        slicecount++;
++                    else if (bitneed[ch][sb] == bitslice + 1)
++                        slicecount += 2;
++                }
++            } while (bitcount + slicecount < frame->bitpool);
++
++            if (bitcount + slicecount == frame->bitpool) {
++                bitcount += slicecount;
++                bitslice--;
++            }
++
++            for (sb = 0; sb < subbands; sb++) {
++                if (bitneed[ch][sb] < bitslice + 2)
++                    bits[ch][sb] = 0;
++                else {
++                    bits[ch][sb] = bitneed[ch][sb] - bitslice;
++                    if (bits[ch][sb] > 16)
++                        bits[ch][sb] = 16;
++                }
++            }
++
++            for (sb = 0; bitcount < frame->bitpool &&
++                            sb < subbands; sb++) {
++                if ((bits[ch][sb] >= 2) && (bits[ch][sb] < 16)) {
++                    bits[ch][sb]++;
++                    bitcount++;
++                } else if ((bitneed[ch][sb] == bitslice + 1) && (frame->bitpool > bitcount + 1)) {
++                    bits[ch][sb] = 2;
++                    bitcount += 2;
++                }
++            }
++
++            for (sb = 0; bitcount < frame->bitpool &&
++                            sb < subbands; sb++) {
++                if (bits[ch][sb] < 16) {
++                    bits[ch][sb]++;
++                    bitcount++;
++                }
++            }
++
++        }
++
++    }
++    else if (frame->mode == SBC_STEREO|| frame->mode == SBC_JOINT_STEREO) {
++        int bitneed[2][8], loudness, max_bitneed, bitcount, slicecount, bitslice;
++        int ch, sb;
++
++        max_bitneed = 0;
++        if (frame->allocation == SBC_SNR) {
++            for (ch = 0; ch < 2; ch++) {
++                for (sb = 0; sb < subbands; sb++) {
++                    bitneed[ch][sb] = frame->scale_factor[ch][sb];
++                    if (bitneed[ch][sb] > max_bitneed)
++                        max_bitneed = bitneed[ch][sb];
++                }
++            }
++        } else {
++            for (ch = 0; ch < 2; ch++) {
++                for (sb = 0; sb < subbands; sb++) {
++                    if (frame->scale_factor[ch][sb] == 0)
++                        bitneed[ch][sb] = -5;
++                    else {
++                        if (subbands == 4)
++                            loudness = frame->scale_factor[ch][sb] - sbc_offset4[sf][sb];
++                        else
++                            loudness = frame->scale_factor[ch][sb] - sbc_offset8[sf][sb];
++                        if (loudness > 0)
++                            bitneed[ch][sb] = loudness / 2;
++                        else
++                            bitneed[ch][sb] = loudness;
++                    }
++                    if (bitneed[ch][sb] > max_bitneed)
++                        max_bitneed = bitneed[ch][sb];
++                }
++            }
++        }
++
++        bitcount = 0;
++        slicecount = 0;
++        bitslice = max_bitneed + 1;
++        do {
++            bitslice--;
++            bitcount += slicecount;
++            slicecount = 0;
++            for (ch = 0; ch < 2; ch++) {
++                for (sb = 0; sb < subbands; sb++) {
++                    if ((bitneed[ch][sb] > bitslice + 1) && (bitneed[ch][sb] < bitslice + 16))
++                        slicecount++;
++                    else if (bitneed[ch][sb] == bitslice + 1)
++                        slicecount += 2;
++                }
++            }
++        } while (bitcount + slicecount < frame->bitpool);
++
++        if (bitcount + slicecount == frame->bitpool) {
++            bitcount += slicecount;
++            bitslice--;
++        }
++
++        for (ch = 0; ch < 2; ch++) {
++            for (sb = 0; sb < subbands; sb++) {
++                if (bitneed[ch][sb] < bitslice + 2) {
++                    bits[ch][sb] = 0;
++                } else {
++                    bits[ch][sb] = bitneed[ch][sb] - bitslice;
++                    if (bits[ch][sb] > 16)
++                        bits[ch][sb] = 16;
++                }
++            }
++        }
++
++        ch = 0;
++        sb = 0;
++        while (bitcount < frame->bitpool) {
++            if ((bits[ch][sb] >= 2) && (bits[ch][sb] < 16)) {
++                bits[ch][sb]++;
++                bitcount++;
++            } else if ((bitneed[ch][sb] == bitslice + 1) && (frame->bitpool > bitcount + 1)) {
++                bits[ch][sb] = 2;
++                bitcount += 2;
++            }
++            if (ch == 1) {
++                ch = 0;
++                sb++;
++                if (sb >= subbands)
++                    break;
++            } else
++                ch = 1;
++        }
++
++        ch = 0;
++        sb = 0;
++        while (bitcount < frame->bitpool) {
++            if (bits[ch][sb] < 16) {
++                bits[ch][sb]++;
++                bitcount++;
++            }
++            if (ch == 1) {
++                ch = 0;
++                sb++;
++                if (sb >= subbands)
++                    break;
++            } else
++                ch = 1;
++        }
++
++    }
++
++}
++
++
++static void sbc_calculate_bits(const struct sbc_frame *frame, int (*bits)[8])
++{
++    if (frame->subbands == 4)
++        sbc_calculate_bits_internal(frame, bits, 4);
++    else
++        sbc_calculate_bits_internal(frame, bits, 8);
++}
++
++
++
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/bta/av/bta_av_aact.c lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/av/bta_av_aact.c
+--- repo_avn/external/bluetooth/bluedroid/bta/av/bta_av_aact.c	2017-07-12 22:05:20.873189404 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/av/bta_av_aact.c	2017-01-25 20:49:25.818119000 +0900
+@@ -81,6 +81,9 @@
+     bta_av_co_audio_start,
+     bta_av_co_audio_stop,
+     bta_av_co_audio_src_data_path,
++#ifdef A2DP_SINK
++    bta_av_co_audio_snk_data_path,
++#endif
+     bta_av_co_audio_delay
+ };
+ 
+@@ -113,6 +116,9 @@
+     bta_av_str_stopped,     /* BTA_AV_STR_STOPPED */
+     bta_av_reconfig,        /* BTA_AV_RECONFIG */
+     bta_av_data_path,       /* BTA_AV_DATA_PATH */
++#ifdef A2DP_SINK
++    bta_av_snk_data_path,   /* BTA_AV_SNK_DATA_PATH */
++#endif
+     bta_av_start_ok,        /* BTA_AV_START_OK */
+     bta_av_start_failed,    /* BTA_AV_START_FAILED */
+     bta_av_str_closed,      /* BTA_AV_STR_CLOSED */
+@@ -1017,11 +1023,19 @@
+             sdp_uuid = UUID_SERVCLASS_AUDIO_SINK;
+ 
+         APPL_TRACE_DEBUG("uuid_int 0x%x, Doing SDP For 0x%x", p_scb->uuid_int, sdp_uuid);
++#ifdef A2DP_SINK
++	    if(A2D_FindService(UUID_SERVCLASS_AUDIO_SOURCE, p_scb->peer_addr, &db_params,
++                        bta_av_a2d_sdp_cback) == A2D_SUCCESS)
++        {
++            return;
++        }
++#else
+         if(A2D_FindService(sdp_uuid, p_scb->peer_addr, &db_params,
+                         bta_av_a2d_sdp_cback) == A2D_SUCCESS)
+         {
+             return;
+         }
++#endif
+     }
+ 
+     /* when the code reaches here, either the DB is NULL
+@@ -2279,6 +2293,63 @@
+     }
+ }
+ 
++#ifdef A2DP_SINK
++/*******************************************************************************
++**
++** Function         bta_av_snk_data_path
++**
++** Description      Handle stream sink data path.
++**
++** Returns          void
++**
++*******************************************************************************/
++
++void bta_av_snk_data_path (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
++{
++    BT_HDR *p_buf;
++
++    /* get a buffer from a2d queue to transport */
++    p_buf = (BT_HDR *)GKI_dequeue(&p_scb->q_info.a2d);
++    if (p_buf)
++    {
++        //APPL_TRACE_DEBUG0("get a buffer from a2d queue");
++        if (p_scb->p_cos->snk_data(p_scb->codec_type, p_buf))
++        {
++            //APPL_TRACE_DEBUG0("successful to transport, put new data into a2d queue");
++            /* successful to transport, put new data into a2d queue */
++            GKI_enqueue(&p_scb->q_info.a2d, p_data);
++        }
++        else
++        {
++            //APPL_TRACE_DEBUG0("failed to transport, put the buffer back to a2d queue");
++            /* failed to transport, put the buffer back to a2d queue */
++            GKI_enqueue_head(&p_scb->q_info.a2d, p_buf);
++            if (p_scb->q_info.a2d.count < 3)
++            {
++                /* a2d queue is not full, put new data into a2d queue */
++                GKI_enqueue(&p_scb->q_info.a2d, p_data);
++            }
++            else
++            {
++                //APPL_TRACE_DEBUG0("too many buffers in a2d queue, drop new data");
++                GKI_freebuf(p_data);
++            }
++        }
++    }
++    else
++    {
++        //APPL_TRACE_DEBUG0("no buffer in a2d queue, transport new data directly");
++        /* no buffer in a2d queue, transport new data directly */
++        if (!p_scb->p_cos->snk_data(p_scb->codec_type, (BT_HDR *)p_data))
++        {
++            //APPL_TRACE_DEBUG0("failed to transport data, put data into a2d queue");
++            /* failed to transport buffer, put buffer into a2d queue*/
++            GKI_enqueue(&p_scb->q_info.a2d, p_data);
++        }
++    }
++}
++#endif
++
+ /*******************************************************************************
+ **
+ ** Function         bta_av_start_ok
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/bta/av/bta_av_act.c lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/av/bta_av_act.c
+--- repo_avn/external/bluetooth/bluedroid/bta/av/bta_av_act.c	2017-07-12 22:05:20.873189404 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/av/bta_av_act.c	2017-01-25 20:49:25.818119000 +0900
+@@ -1995,7 +1995,12 @@
+                 bta_ar_dereg_avrc (UUID_SERVCLASS_AV_REMOTE_CONTROL, BTA_ID_AV);
+ #endif
+                 bta_av_del_sdp_rec(&p_cb->sdp_a2d_handle);
++
++#ifdef A2DP_SINK
++                bta_sys_remove_uuid(UUID_SERVCLASS_AUDIO_SINK);
++#else
+                 bta_sys_remove_uuid(UUID_SERVCLASS_AUDIO_SOURCE);
++#endif
+ 
+ #if (BTA_AV_SINK_INCLUDED == TRUE)
+                 bta_av_del_sdp_rec(&p_cb->sdp_a2d_snk_handle);
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/bta/av/bta_av_int.h lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/av/bta_av_int.h
+--- repo_avn/external/bluetooth/bluedroid/bta/av/bta_av_int.h	2017-07-12 22:05:20.873189404 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/av/bta_av_int.h	2017-01-25 20:49:25.818119000 +0900
+@@ -58,6 +58,9 @@
+     BTA_AV_API_PROTECT_RSP_EVT,
+     BTA_AV_API_RC_OPEN_EVT,
+     BTA_AV_SRC_DATA_READY_EVT,
++#ifdef A2DP_SINK
++    BTA_AV_SNK_DATA_READY_EVT,
++#endif
+     BTA_AV_CI_SETCONFIG_OK_EVT,
+     BTA_AV_CI_SETCONFIG_FAIL_EVT,
+     BTA_AV_SDP_DISC_OK_EVT,
+@@ -90,6 +93,9 @@
+     BTA_AV_API_DEREGISTER_EVT,
+     BTA_AV_API_DISCONNECT_EVT,
+     BTA_AV_CI_SRC_DATA_READY_EVT,
++#ifdef A2DP_SINK
++    BTA_AV_CI_SNK_DATA_READY_EVT,
++#endif
+     BTA_AV_SIG_CHG_EVT,
+     BTA_AV_SIG_TIMER_EVT,
+     BTA_AV_SDP_AVRC_DISC_EVT,
+@@ -176,6 +182,10 @@
+ typedef void (*tBTA_AV_CO_STOP) (tBTA_AV_HNDL hndl, tBTA_AV_CODEC codec_type);
+ typedef void * (*tBTA_AV_CO_DATAPATH) (tBTA_AV_CODEC codec_type,
+                                        UINT32 *p_len, UINT32 *p_timestamp);
++#ifdef A2DP_SINK
++typedef BOOLEAN (*tBTA_AV_CO_SNK_DATAPATH) (tBTA_AV_CODEC codec_type,
++                                            BT_HDR *p_buf);
++#endif
+ typedef void (*tBTA_AV_CO_DELAY) (tBTA_AV_HNDL hndl, UINT16 delay);
+ 
+ /* the call-out functions for one stream */
+@@ -190,6 +200,9 @@
+     tBTA_AV_CO_START    start;
+     tBTA_AV_CO_STOP     stop;
+     tBTA_AV_CO_DATAPATH data;
++#ifdef A2DP_SINK
++    tBTA_AV_CO_SNK_DATAPATH snk_data;
++#endif
+     tBTA_AV_CO_DELAY    delay;
+ } tBTA_AV_CO_FUNCTS;
+ 
+@@ -700,6 +713,9 @@
+ extern void bta_av_str_stopped (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);
+ extern void bta_av_reconfig (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);
+ extern void bta_av_data_path (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);
++#ifdef A2DP_SINK
++extern void bta_av_snk_data_path (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);
++#endif
+ extern void bta_av_start_ok (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);
+ extern void bta_av_start_failed (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);
+ extern void bta_av_str_closed (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/bta/av/bta_av_main.c lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/av/bta_av_main.c
+--- repo_avn/external/bluetooth/bluedroid/bta/av/bta_av_main.c	2017-07-12 22:05:20.873189404 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/av/bta_av_main.c	2017-01-25 20:49:25.818119000 +0900
+@@ -156,6 +156,9 @@
+ static void bta_av_api_sink_enable(tBTA_AV_DATA *p_data);
+ #endif
+ static void bta_av_ci_data(tBTA_AV_DATA *p_data);
++#ifdef A2DP_SINK
++static void bta_av_ci_snk_data(tBTA_AV_DATA *p_data);
++#endif
+ #if (AVDT_REPORTING == TRUE)
+ static void bta_av_rpc_conn(tBTA_AV_DATA *p_data);
+ #endif
+@@ -174,6 +177,9 @@
+     bta_av_api_deregister,  /* BTA_AV_API_DEREGISTER_EVT */
+     bta_av_api_disconnect,  /* BTA_AV_API_DISCONNECT_EVT */
+     bta_av_ci_data,         /* BTA_AV_CI_SRC_DATA_READY_EVT */
++#ifdef A2DP_SINK
++    bta_av_ci_snk_data,     /* BTA_AV_CI_SNK_DATA_READY_EVT */
++#endif
+     bta_av_sig_chg,         /* BTA_AV_SIG_CHG_EVT */
+     bta_av_sig_timer,       /* BTA_AV_SIG_TIMER_EVT */
+     bta_av_rc_disc_done,    /* BTA_AV_SDP_AVRC_DISC_EVT */
+@@ -467,6 +473,31 @@
+ }
+ #endif
+ 
++#ifdef A2DP_SINK
++/*******************************************************************************
++**
++** Function         bta_av_a2dp_data_cback
++**
++** Description      A2DP data callback is executed when AVDTP has a media packet
++**                  ready for the application. The function type is
++**                  tAVDT_DATA_CBACK.
++**
++** Returns          void
++**
++*******************************************************************************/
++static void bta_av_a2dp_data_cback(UINT8 handle, BT_HDR *p_pkt,
++                                   UINT32 time_stamp, UINT8 m_pt)
++{
++    /* send sink data ready msg to stream SM */
++    *((UINT32 *) (p_pkt + 1)) = time_stamp;
++    /* sequence number */
++    *((UINT16 *) (p_pkt + 1) + 2) = p_pkt->layer_specific;
++    p_pkt->layer_specific = BTA_AV_CHNL_AUDIO;
++    p_pkt->event = BTA_AV_CI_SNK_DATA_READY_EVT;
++    bta_sys_sendmsg(p_pkt);
++}
++#endif
++
+ #if (BTA_AV_SINK_INCLUDED == TRUE)
+ /*******************************************************************************
+ **
+@@ -598,13 +629,20 @@
+         /* get stream configuration and create stream */
+         /* memset(&cs.cfg,0,sizeof(tAVDT_CFG)); */
+         cs.cfg.num_codec = 1;
++#ifdef A2DP_SINK
++        cs.tsep = AVDT_TSEP_SNK;
++#else
+         cs.tsep = AVDT_TSEP_SRC;
++#endif
+ 
+         /*
+          * memset of cs takes care setting call back pointers to null.
+         cs.p_data_cback = NULL;
+         cs.p_report_cback = NULL;
+         */
++#ifdef A2DP_SINK
++        cs.p_data_cback = bta_av_a2dp_data_cback;
++#endif
+         cs.nsc_mask = AVDT_NSC_RECONFIG |
+               ((bta_av_cb.features & BTA_AV_FEAT_PROTECT) ? 0 : AVDT_NSC_SECURITY);
+         APPL_TRACE_DEBUG("nsc_mask: 0x%x", cs.nsc_mask);
+@@ -684,9 +722,17 @@
+             {
+                 /* create the SDP records on the 1st audio channel */
+                 bta_av_cb.sdp_a2d_handle = SDP_CreateRecord();
++                /*
++#ifdef A2DP_SINK
++		        A2D_AddRecord(UUID_SERVCLASS_AUDIO_SINK, p_service_name, NULL,
++                                  A2D_SUPF_SPEAKER, bta_av_cb.sdp_a2d_handle);
++                bta_sys_add_uuid(UUID_SERVCLASS_AUDIO_SINK);
++#else
+                 A2D_AddRecord(UUID_SERVCLASS_AUDIO_SOURCE, p_service_name, NULL,
+                                   A2D_SUPF_PLAYER, bta_av_cb.sdp_a2d_handle);
+                 bta_sys_add_uuid(UUID_SERVCLASS_AUDIO_SOURCE);
++#endif
++                */
+ 
+ #if (BTA_AV_SINK_INCLUDED == TRUE)
+                 bta_av_cb.sdp_a2d_snk_handle = SDP_CreateRecord();
+@@ -694,6 +740,17 @@
+                                   A2D_SUPF_PLAYER, bta_av_cb.sdp_a2d_snk_handle);
+                 bta_sys_add_uuid(UUID_SERVCLASS_AUDIO_SINK);
+ #endif
++
++#ifdef A2DP_SINK
++		        A2D_AddRecord(UUID_SERVCLASS_AUDIO_SINK, p_service_name, NULL,
++                                  A2D_SUPF_SPEAKER, bta_av_cb.sdp_a2d_handle);
++                bta_sys_add_uuid(UUID_SERVCLASS_AUDIO_SINK);
++#else
++                A2D_AddRecord(UUID_SERVCLASS_AUDIO_SOURCE, p_service_name, NULL,
++                                  A2D_SUPF_PLAYER, bta_av_cb.sdp_a2d_handle);
++                bta_sys_add_uuid(UUID_SERVCLASS_AUDIO_SOURCE);
++#endif
++
+                 /* start listening when A2DP is registered */
+                 if (bta_av_cb.features & BTA_AV_FEAT_RCTG)
+                     bta_av_rc_create(&bta_av_cb, AVCT_ACP, 0, BTA_AV_NUM_LINKS + 1);
+@@ -790,6 +847,33 @@
+     }
+ }
+ 
++#ifdef A2DP_SINK
++/*******************************************************************************
++**
++** Function         bta_av_ci_snk_data
++**
++** Description      forward the BTA_AV_CI_SNK_DATA_READY_EVT to stream state machine
++**
++**
++** Returns          void
++**
++*******************************************************************************/
++static void bta_av_ci_snk_data(tBTA_AV_DATA *p_data)
++{
++    tBTA_AV_SCB *p_scb;
++    int     i;
++    UINT8   chnl = (UINT8)p_data->hdr.layer_specific;
++    for( i=0; i < BTA_AV_NUM_STRS; i++ )
++    {
++        p_scb = bta_av_cb.p_scb[i];
++        if(p_scb && p_scb->chnl == chnl)
++        {
++            bta_av_ssm_execute(p_scb, BTA_AV_SNK_DATA_READY_EVT, p_data);
++        }
++    }
++}
++#endif
++
+ /*******************************************************************************
+ **
+ ** Function         bta_av_rpc_conn
+@@ -1286,6 +1370,14 @@
+ #endif
+         /* non state machine events */
+         (*bta_av_nsm_act[event - BTA_AV_FIRST_NSM_EVT]) ((tBTA_AV_DATA *) p_msg);
++
++#ifdef A2DP_SINK
++	    if (event == BTA_AV_CI_SNK_DATA_READY_EVT)
++        {
++            //APPL_TRACE_DEBUG0("not to free p_msg, media task uses it directly to avoid memory copy");
++            return FALSE;
++        }
++#endif
+     }
+     else if (event >= BTA_AV_FIRST_SM_EVT && event <= BTA_AV_LAST_SM_EVT)
+     {
+@@ -1362,6 +1454,9 @@
+     case BTA_AV_API_PROTECT_RSP_EVT: return "API_PROTECT_RSP";
+     case BTA_AV_API_RC_OPEN_EVT: return "API_RC_OPEN";
+     case BTA_AV_SRC_DATA_READY_EVT: return "SRC_DATA_READY";
++#ifdef A2DP_SINK
++    case BTA_AV_SNK_DATA_READY_EVT: return "SNK_DATA_READY";
++#endif
+     case BTA_AV_CI_SETCONFIG_OK_EVT: return "CI_SETCONFIG_OK";
+     case BTA_AV_CI_SETCONFIG_FAIL_EVT: return "CI_SETCONFIG_FAIL";
+     case BTA_AV_SDP_DISC_OK_EVT: return "SDP_DISC_OK";
+@@ -1393,6 +1488,9 @@
+     case BTA_AV_API_DEREGISTER_EVT: return "API_DEREG";
+     case BTA_AV_API_DISCONNECT_EVT: return "API_DISCNT";
+     case BTA_AV_CI_SRC_DATA_READY_EVT: return "CI_DATA_READY";
++#ifdef A2DP_SINK
++    case BTA_AV_CI_SNK_DATA_READY_EVT: return "CI_SNK_DATA_READY";
++#endif
+     case BTA_AV_SIG_CHG_EVT: return "SIG_CHG";
+     case BTA_AV_SIG_TIMER_EVT: return "SIG_TMR";
+     case BTA_AV_SDP_AVRC_DISC_EVT: return "SDP_AVRC_DISC";
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/bta/av/bta_av_sbc.c lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/av/bta_av_sbc.c
+--- repo_avn/external/bluetooth/bluedroid/bta/av/bta_av_sbc.c	2017-07-12 22:05:20.873189404 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/av/bta_av_sbc.c	2017-01-25 20:49:25.818119000 +0900
+@@ -663,3 +663,17 @@
+     A2D_BldSbcMplHdr(p, FALSE, FALSE, FALSE, (UINT8) fr_per_pkt);
+ }
+ 
++#ifdef A2DP_SINK
++void bta_av_sbc_prs_hdr(BT_HDR *p_buf, UINT16 *p_fr_per_pkt)
++{
++    BOOLEAN frag;
++    BOOLEAN start;
++    BOOLEAN last;
++
++    A2D_ParsSbcMplHdr((UINT8 *) (p_buf + 1) + p_buf->offset, &frag, &start,
++                      &last, (UINT8 *)p_fr_per_pkt);
++    p_buf->offset += BTA_AV_SBC_HDR_SIZE;
++    p_buf->len -= BTA_AV_SBC_HDR_SIZE;
++}
++#endif
++
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/bta/av/bta_av_ssm.c lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/av/bta_av_ssm.c
+--- repo_avn/external/bluetooth/bluedroid/bta/av/bta_av_ssm.c	2017-07-12 22:05:20.877189396 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/av/bta_av_ssm.c	2017-01-25 20:49:25.818119000 +0900
+@@ -74,6 +74,9 @@
+     BTA_AV_STR_STOPPED,
+     BTA_AV_RECONFIG,
+     BTA_AV_DATA_PATH,
++#ifdef A2DP_SINK
++    BTA_AV_SNK_DATA_PATH,
++#endif
+     BTA_AV_START_OK,
+     BTA_AV_START_FAILED,
+     BTA_AV_STR_CLOSED,
+@@ -121,6 +124,9 @@
+ /* API_PROTECT_RSP_EVT */   {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_INIT_SST },
+ /* API_RC_OPEN_EVT  */      {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_INIT_SST },
+ /* SRC_DATA_READY_EVT */    {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_INIT_SST },
++#ifdef A2DP_SINK
++/* SNK_DATA_READY_EVT */    {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_INIT_SST },
++#endif
+ /* CI_SETCONFIG_OK_EVT */   {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_INIT_SST },
+ /* CI_SETCONFIG_FAIL_EVT */ {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_INIT_SST },
+ /* SDP_DISC_OK_EVT */       {BTA_AV_FREE_SDB,       BTA_AV_SIGNORE,        BTA_AV_INIT_SST },
+@@ -161,6 +167,9 @@
+ /* API_PROTECT_RSP_EVT */   {BTA_AV_SECURITY_RSP,   BTA_AV_SIGNORE,        BTA_AV_INCOMING_SST },
+ /* API_RC_OPEN_EVT  */      {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_INCOMING_SST },
+ /* SRC_DATA_READY_EVT */    {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_INCOMING_SST },
++#ifdef A2DP_SINK
++/* SNK_DATA_READY_EVT */    {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_INCOMING_SST },
++#endif
+ /* CI_SETCONFIG_OK_EVT */   {BTA_AV_SETCONFIG_RSP,  BTA_AV_ST_RC_TIMER,    BTA_AV_INCOMING_SST },
+ /* CI_SETCONFIG_FAIL_EVT */ {BTA_AV_SETCONFIG_REJ,  BTA_AV_CLEANUP,        BTA_AV_INIT_SST },
+ /* SDP_DISC_OK_EVT */       {BTA_AV_FREE_SDB,       BTA_AV_SIGNORE,        BTA_AV_INCOMING_SST },
+@@ -201,6 +210,9 @@
+ /* API_PROTECT_RSP_EVT */   {BTA_AV_SECURITY_RSP,   BTA_AV_SIGNORE,        BTA_AV_OPENING_SST },
+ /* API_RC_OPEN_EVT  */      {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_OPENING_SST },
+ /* SRC_DATA_READY_EVT */    {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_OPENING_SST },
++#ifdef A2DP_SINK
++/* SNK_DATA_READY_EVT */    {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_OPENING_SST },
++#endif
+ /* CI_SETCONFIG_OK_EVT */   {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_OPENING_SST },
+ /* CI_SETCONFIG_FAIL_EVT */ {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_OPENING_SST },
+ /* SDP_DISC_OK_EVT */       {BTA_AV_CONNECT_REQ,    BTA_AV_SIGNORE,        BTA_AV_OPENING_SST },
+@@ -241,6 +253,9 @@
+ /* API_PROTECT_RSP_EVT */   {BTA_AV_SECURITY_RSP,   BTA_AV_SIGNORE,        BTA_AV_OPEN_SST },
+ /* API_RC_OPEN_EVT  */      {BTA_AV_SET_USE_RC,     BTA_AV_OPEN_RC,        BTA_AV_OPEN_SST },
+ /* SRC_DATA_READY_EVT */    {BTA_AV_DATA_PATH,      BTA_AV_SIGNORE,        BTA_AV_OPEN_SST },
++#ifdef A2DP_SINK
++/* SNK_DATA_READY_EVT */    {BTA_AV_SNK_DATA_PATH,  BTA_AV_SIGNORE,        BTA_AV_OPEN_SST },
++#endif
+ /* CI_SETCONFIG_OK_EVT */   {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_OPEN_SST },
+ /* CI_SETCONFIG_FAIL_EVT */ {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_OPEN_SST },
+ /* SDP_DISC_OK_EVT */       {BTA_AV_FREE_SDB,       BTA_AV_SIGNORE,        BTA_AV_OPEN_SST },
+@@ -281,6 +296,9 @@
+ /* API_PROTECT_RSP_EVT */   {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_RCFG_SST },
+ /* API_RC_OPEN_EVT  */      {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_RCFG_SST },
+ /* SRC_DATA_READY_EVT */    {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_RCFG_SST },
++#ifdef A2DP_SINK
++/* SNK_DATA_READY_EVT */    {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_RCFG_SST },
++#endif
+ /* CI_SETCONFIG_OK_EVT */   {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_RCFG_SST },
+ /* CI_SETCONFIG_FAIL_EVT */ {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_RCFG_SST },
+ /* SDP_DISC_OK_EVT */       {BTA_AV_FREE_SDB,       BTA_AV_SIGNORE,        BTA_AV_RCFG_SST },
+@@ -321,6 +339,9 @@
+ /* API_PROTECT_RSP_EVT */   {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_CLOSING_SST },
+ /* API_RC_OPEN_EVT  */      {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_CLOSING_SST },
+ /* SRC_DATA_READY_EVT */    {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_CLOSING_SST },
++#ifdef A2DP_SINK
++/* SNK_DATA_READY_EVT */    {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_CLOSING_SST },
++#endif
+ /* CI_SETCONFIG_OK_EVT */   {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_CLOSING_SST },
+ /* CI_SETCONFIG_FAIL_EVT */ {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_CLOSING_SST },
+ /* SDP_DISC_OK_EVT */       {BTA_AV_SDP_FAILED,     BTA_AV_SIGNORE,        BTA_AV_INIT_SST },
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/bta/include/bta_av_co.h lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/include/bta_av_co.h
+--- repo_avn/external/bluetooth/bluedroid/bta/include/bta_av_co.h	2017-07-12 22:05:20.921189307 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/include/bta_av_co.h	2017-01-25 20:49:25.818119000 +0900
+@@ -310,6 +310,21 @@
+ BTA_API extern void * bta_av_co_audio_src_data_path(tBTA_AV_CODEC codec_type,
+                                                     UINT32 *p_len, UINT32 *p_timestamp);
+ 
++#ifdef A2DP_SINK
++/*******************************************************************************
++**
++** Function         bta_av_co_audio_snk_data_path
++**
++** Description      This function is called to put the next data buffer into
++**                  the audio codec
++**
++** Returns          TRUE-successful, FALSE-failed
++**
++*******************************************************************************/
++BTA_API extern BOOLEAN bta_av_co_audio_snk_data_path(tBTA_AV_CODEC codec_type,
++                                                     BT_HDR *p_buf);
++#endif
++
+ /*******************************************************************************
+ **
+ ** Function         bta_av_co_video_src_data_path
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/bta/include/bta_av_sbc.h lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/include/bta_av_sbc.h
+--- repo_avn/external/bluetooth/bluedroid/bta/include/bta_av_sbc.h	2017-07-12 22:05:20.921189307 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/bta/include/bta_av_sbc.h	2017-01-25 20:49:25.818119000 +0900
+@@ -215,5 +215,18 @@
+ *******************************************************************************/
+ extern void bta_av_sbc_bld_hdr(BT_HDR *p_buf, UINT16 fr_per_pkt);
+ 
++#ifdef A2DP_SINK
++/*******************************************************************************
++**
++** Function         bta_av_sbc_prs_hdr
++**
++** Description      This function parses the packet header for MPF1.
++**
++** Returns          void
++**
++*******************************************************************************/
++extern void bta_av_sbc_prs_hdr(BT_HDR *p_buf, UINT16 *p_fr_per_pkt);
++#endif
++
+ #endif /* BTA_AV_SBC_H */
+ 
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/btif/co/bta_av_co.c lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/btif/co/bta_av_co.c
+--- repo_avn/external/bluetooth/bluedroid/btif/co/bta_av_co.c	2017-07-12 22:05:20.929189291 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/btif/co/bta_av_co.c	2017-01-25 20:49:25.818119000 +0900
+@@ -1069,6 +1069,70 @@
+     return p_buf;
+ }
+ 
++#ifdef A2DP_SINK
++/*******************************************************************************
++ **
++ ** Function         bta_av_co_audio_snk_data_path
++ **
++ ** Description      This function is called to manage data transfer from
++ **                  the AVDTP to audio codec.
++ **
++ ** Returns          TRUE-successful, FALSE-failed
++ **
++ *******************************************************************************/
++BTA_API BOOLEAN bta_av_co_audio_snk_data_path(tBTA_AV_CODEC codec_type,
++                                              BT_HDR *p_buf)
++{
++    UINT32 timestamp;
++    UINT16 seq_num;
++
++    FUNC_TRACE();
++
++    if (p_buf == NULL) {
++        //APPL_TRACE_ERROR0("pointer to audio data is NULL");
++        return FALSE;
++    }
++
++#if defined(BTA_AV_CO_CP_SCMS_T) && (BTA_AV_CO_CP_SCMS_T == TRUE)
++    {
++        UINT8 *p;
++        if (bta_av_co_cp_is_active())
++        {
++            p = (UINT8 *)(p_buf + 1) + p_buf->offset;
++            bta_av_co_cp_set_flag(*p);
++            p_buf->len--;
++            p_buf->offset++;
++        }
++    }
++#endif
++
++    switch (codec_type)
++    {
++    case BTA_AV_CODEC_SBC:
++        /* In media packet SBC, the following information is available:
++         * p_buf->layer_specific : number of SBC frames in the packet
++         * p_buf->word[0] : timestamp
++         * p_buf->word[1] : seq_num
++         */
++         timestamp = *(UINT32 *)(p_buf + 1);
++         seq_num = *((UINT16 *)(p_buf + 1) + 2);
++
++        /* Parse packet header */
++        bta_av_sbc_prs_hdr(p_buf, &p_buf->layer_specific);
++        break;
++
++    default:
++        //APPL_TRACE_ERROR1("bta_av_co_audio_snk_data_path Unsupported codec type (%d)", codec_type);
++        return FALSE;
++    }
++
++    btif_media_aa_writebuf(p_buf, timestamp, seq_num);
++    btif_media_aa_snk_data_ready();
++
++    return TRUE;
++}
++#endif
++
+ /*******************************************************************************
+  **
+  ** Function         bta_av_co_audio_drop
+@@ -1608,6 +1672,9 @@
+     switch (p_feeding->format)
+     {
+     case BTIF_AV_CODEC_PCM:
++#ifdef A2DP_SINK
++    case BTIF_AV_CODEC_SBC:
++#endif
+         new_cfg.id = BTIF_AV_CODEC_SBC;
+ 
+         sbc_config = btif_av_sbc_default_config;
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/btif/include/btif_av_api.h lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/btif/include/btif_av_api.h
+--- repo_avn/external/bluetooth/bluedroid/btif/include/btif_av_api.h	2017-07-12 22:05:20.933189283 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/btif/include/btif_av_api.h	2017-01-25 20:49:25.818119000 +0900
+@@ -202,6 +202,25 @@
+     tBTIF_AV_MEDIA_FEED_CFG cfg;     /* Media codec configuration */
+ } tBTIF_AV_MEDIA_FEEDINGS;
+ 
++#ifdef A2DP_SINK
++
++/**
++ * Structure used to configure the AV media receiving
++ */
++
++#ifndef tBTIF_AV_MEDIA_RECEIVE_CFG_PCM
++#define tBTIF_AV_MEDIA_RECEIVE_CFG_PCM tBTIF_AV_MEDIA_FEED_CFG_PCM
++#endif
++
++#ifndef tBTIF_AV_MEDIA_RECEIVE_CFG
++#define tBTIF_AV_MEDIA_RECEIVE_CFG tBTIF_AV_MEDIA_FEED_CFG
++#endif
++
++#ifndef tBTIF_AV_MEDIA_RECEIVINGS
++#define tBTIF_AV_MEDIA_RECEIVINGS tBTIF_AV_MEDIA_FEEDINGS
++#endif
++
++#endif
+ 
+ #ifdef __cplusplus
+ }
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/btif/include/btif_media.h lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/btif/include/btif_media.h
+--- repo_avn/external/bluetooth/bluedroid/btif/include/btif_media.h	2017-07-12 22:05:20.933189283 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/btif/include/btif_media.h	2017-01-25 20:49:25.818119000 +0900
+@@ -53,7 +53,9 @@
+ /* Transcoding definition for TxTranscoding and RxTranscoding */
+ #define BTIF_MEDIA_TRSCD_OFF             0
+ #define BTIF_MEDIA_TRSCD_PCM_2_SBC       1  /* Tx */
+-
++#ifdef A2DP_SINK
++#define BTIF_MEDIA_TRSCD_SBC_2_PCM       2  /* Rx */
++#endif
+ 
+ /*******************************************************************************
+  **  Data types
+@@ -91,6 +93,14 @@
+         tBTIF_AV_MEDIA_FEEDINGS feeding;
+ } tBTIF_MEDIA_INIT_AUDIO_FEEDING;
+ 
++#ifdef A2DP_SINK
++typedef struct
++{
++        BT_HDR hdr;
++        tBTIF_AV_MEDIA_RECEIVINGS receiving;
++} tBTIF_MEDIA_INIT_AUDIO_RECEIVING;
++#endif
++
+ typedef struct
+ {
+         BT_HDR hdr;
+@@ -124,6 +134,19 @@
+  *******************************************************************************/
+ extern BOOLEAN btif_media_task_enc_init_req(tBTIF_MEDIA_INIT_AUDIO * p_msg);
+ 
++#ifdef A2DP_SINK
++/*******************************************************************************
++ **
++ ** Function         btif_media_task_dec_init_req
++ **
++ ** Description      Request to initialize the media task decoder
++ **
++ ** Returns          TRUE is success
++ **
++ *******************************************************************************/
++extern BOOLEAN btif_media_task_dec_init_req(tBTIF_MEDIA_INIT_AUDIO * p_msg);
++#endif
++
+ /*******************************************************************************
+  **
+  ** Function         btif_media_task_enc_update_req
+@@ -241,6 +264,29 @@
+ extern BOOLEAN btif_media_task_audio_feeding_init_req(tBTIF_MEDIA_INIT_AUDIO_FEEDING *p_msg);
+ #endif
+ 
++#ifdef A2DP_SINK
++/*******************************************************************************
++ **
++ ** Function         btif_media_task_audio_receiving_init_req
++ **
++ ** Description      Request to initialize audio receiving
++ **
++ ** Returns          TRUE is success
++ **
++ *******************************************************************************/
++extern BOOLEAN btif_media_task_audio_receiving_init_req(tBTIF_MEDIA_INIT_AUDIO_RECEIVING *p_msg);
++
++/*******************************************************************************
++ ** Function         bt_media_aa_snk_data_ready
++ **
++ ** Descriptoin      This function sends an event to meida task that Advance Audio
++ **                  media GKI buffer is ready in receiving queue
++ **
++ ** Returns          void
++*******************************************************************************/
++extern void btif_media_aa_snk_data_ready(void);
++#endif
++
+ /*******************************************************************************
+  **
+  ** Function         dump_codec_info
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/btif/src/btif_av.c lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/btif/src/btif_av.c
+--- repo_avn/external/bluetooth/bluedroid/btif/src/btif_av.c	2017-07-12 22:05:21.097188953 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/btif/src/btif_av.c	2017-03-16 15:59:01.806948000 +0900
+@@ -121,6 +121,7 @@
+     case BTA_AV_VENDOR_CMD_EVT: \
+     case BTA_AV_META_MSG_EVT: \
+     case BTA_AV_RC_FEAT_EVT: \
++    case BTA_AV_REMOTE_RSP_EVT: \
+     { \
+          btif_rc_handler(e, d);\
+     }break; \
+@@ -333,6 +334,7 @@
+         case BTA_AV_VENDOR_CMD_EVT:
+         case BTA_AV_META_MSG_EVT:
+         case BTA_AV_RC_FEAT_EVT:
++        case BTA_AV_REMOTE_RSP_EVT:     // SDY
+             btif_rc_handler(event, (tBTA_AV*)p_data);
+             break;
+ 
+@@ -816,7 +818,7 @@
+         default:
+             BTIF_TRACE_WARNING("%s : unhandled event:%s", __FUNCTION__,
+                                  dump_av_sm_event_name(event));
+-            return FALSE;
++            return FALSE; // SDY
+ 
+     }
+     return TRUE;
+@@ -892,7 +894,11 @@
+         if (btif_a2dp_start_media_task() != GKI_SUCCESS)
+             return BT_STATUS_FAIL;
+ 
++#ifdef A2DP_SINK
++        btif_enable_service(BTA_A2DP_SOURCE_SERVICE_ID);
++#else
+         btif_enable_service(BTA_A2DP_SERVICE_ID);
++#endif
+ 
+         /* Also initialize the AV state machine */
+         btif_av_cb.sm_handle = btif_sm_init((const btif_sm_handler_t*)btif_av_state_handlers, BTIF_AV_STATE_IDLE);
+@@ -1039,7 +1045,11 @@
+ 
+     btif_a2dp_stop_media_task();
+ 
++#ifdef A2DP_SINK
++    btif_disable_service(BTA_A2DP_SOURCE_SERVICE_ID);
++#else
+     btif_disable_service(BTA_A2DP_SERVICE_ID);
++#endif
+ 
+     /* Also shut down the AV state machine */
+     btif_sm_shutdown(btif_av_cb.sm_handle);
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/btif/src/btif_dm.c lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/btif/src/btif_dm.c
+--- repo_avn/external/bluetooth/bluedroid/btif/src/btif_dm.c	2017-07-12 22:05:21.101188945 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/btif/src/btif_dm.c	2017-01-25 20:49:25.818119000 +0900
+@@ -254,6 +254,9 @@
+          {
+               btif_hf_execute_service(b_enable);
+          }break;
++#ifdef A2DP_SINK
++         case BTA_A2DP_SOURCE_SERVICE_ID:
++#endif
+          case BTA_A2DP_SERVICE_ID:
+          {
+               btif_av_execute_service(b_enable);
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/btif/src/btif_media_task.c lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/btif/src/btif_media_task.c
+--- repo_avn/external/bluetooth/bluedroid/btif/src/btif_media_task.c	2017-07-12 22:05:21.113188921 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/btif/src/btif_media_task.c	2017-01-25 20:49:25.818119000 +0900
+@@ -57,6 +57,9 @@
+ 
+ #if (BTA_AV_INCLUDED == TRUE)
+ #include "sbc_encoder.h"
++#ifdef A2DP_SINK
++#include "sbc_decoder.h"
++#endif
+ #endif
+ 
+ #define LOG_TAG "BTIF-MEDIA"
+@@ -270,6 +273,13 @@
+     tBTIF_AV_MEDIA_FEEDINGS media_feeding;
+     tBTIF_AV_MEDIA_FEEDINGS_STATE media_feeding_state;
+     SBC_ENC_PARAMS encoder;
++#ifdef A2DP_SINK
++    BUFFER_Q RxAaQ;
++    UINT16 RxAaMtuSize;
++    UINT8 RxTranscoding;
++    tBTIF_AV_MEDIA_RECEIVINGS media_receiving;
++    SBC_DEC_PARAMS decoder;
++#endif
+     UINT8 busy_level;
+     void* av_sm_hdl;
+     UINT8 a2dp_cmd_pending; /* we can have max one command pending */
+@@ -349,6 +359,13 @@
+ static void btif_media_task_audio_feeding_init(BT_HDR *p_msg);
+ static void btif_media_task_aa_tx_flush(BT_HDR *p_msg);
+ static void btif_media_aa_prep_2_send(UINT8 nb_frame);
++#ifdef A2DP_SINK
++static void btif_media_task_dec_init(BT_HDR *p_msg);
++static void btif_media_task_audio_receiving_init(BT_HDR *p_msg);
++static void btif_media_aa_recv_frame(void);
++static void btif_media_aa_recv_sbc_frame(BT_HDR *p_buf);
++static BOOLEAN btif_media_aa_write_receiving(tUIPC_CH_ID channel_id);
++#endif
+ #if (BTA_AV_SINK_INCLUDED == TRUE)
+ static void btif_media_task_aa_handle_decoder_reset(BT_HDR *p_msg);
+ static void btif_media_task_aa_handle_clear_track(void);
+@@ -361,6 +378,50 @@
+  **  Misc helper functions
+  *****************************************************************************/
+ 
++static void tput_mon(int is_rx, int len, int reset)
++{
++    /* only monitor one connection at a time for now */
++    static t_stat cur_stat;
++    struct timespec now;
++    unsigned long long prev_us;
++    unsigned long long now_us;
++
++    if (reset == TRUE)
++    {
++        memset(&cur_stat, 0, sizeof(t_stat));
++        return;
++    }
++
++    if (is_rx)
++    {
++        cur_stat.rx+=len;
++        cur_stat.rx_tot+=len;
++    }
++    else
++    {
++        cur_stat.tx+=len;
++        cur_stat.tx_tot+=len;
++    }
++    clock_gettime(CLOCK_MONOTONIC, &now);
++
++    now_us = now.tv_sec*USEC_PER_SEC + now.tv_nsec/1000;
++
++    if ((now_us - cur_stat.ts_prev_us) < TPUT_STATS_INTERVAL_US)
++        return;
++
++    /*
++    APPL_TRACE_WARNING4("tput rx:%d, tx:%d (bytes/s)  (tot : rx %d, tx %d bytes)",
++          (cur_stat.rx*1000000)/((now_us - cur_stat.ts_prev_us)),
++          (cur_stat.tx*1000000)/((now_us - cur_stat.ts_prev_us)),
++           cur_stat.rx_tot, cur_stat.tx_tot);
++    */
++
++    /* stats dumped. now reset stats for next interval */
++    cur_stat.rx = 0;
++    cur_stat.tx = 0;
++    cur_stat.ts_prev_us = now_us;
++}
++
+ static UINT64 time_now_us()
+ {
+     struct timespec ts_now;
+@@ -620,11 +681,13 @@
+                        (void *)A2DP_DATA_READ_POLL_MS);
+ 
+             if (btif_media_cb.peer_sep == AVDT_TSEP_SNK) {
++#ifndef A2DP_SINK
+                 /* Start the media task to encode SBC */
+                 btif_media_task_start_aa_req();
+ 
+                 /* make sure we update any changed sbc encoder params */
+                 btif_a2dp_encoder_update();
++#endif
+             }
+             btif_media_cb.data_channel_open = TRUE;
+ 
+@@ -662,6 +725,36 @@
+     return rate;
+ }
+ 
++#ifdef A2DP_SINK
++static void btif_a2dp_decoder_init(void)
++{
++    UINT16 minmtu;
++    tBTIF_MEDIA_INIT_AUDIO msg;
++    tA2D_SBC_CIE sbc_config;
++
++    /* lookup table for converting channel mode */
++    UINT16 codec_mode_tbl[5] = { SBC_JOINT_STEREO, SBC_STEREO, SBC_DUAL, 0, SBC_MONO };
++
++    /* lookup table for converting number of blocks */
++    UINT16 codec_block_tbl[5] = { 16, 12, 8, 0, 4 };
++
++    /* lookup table to convert freq */
++    UINT16 freq_block_tbl[5] = { SBC_sf48000, SBC_sf44100, SBC_sf32000, 0, SBC_sf16000 };
++
++    /* Retrieve the current SBC configuration (default if currently not used) */
++    bta_av_co_audio_get_sbc_config(&sbc_config, &minmtu);
++    msg.NumOfSubBands = (sbc_config.num_subbands == A2D_SBC_IE_SUBBAND_4) ? 4 : 8;
++    msg.NumOfBlocks = codec_block_tbl[sbc_config.block_len >> 5];
++    msg.AllocationMethod = (sbc_config.alloc_mthd == A2D_SBC_IE_ALLOC_MD_L) ? SBC_LOUDNESS : SBC_SNR;
++    msg.ChannelMode = codec_mode_tbl[sbc_config.ch_mode >> 1];
++    msg.SamplingFreq = freq_block_tbl[sbc_config.samp_freq >> 5];
++    msg.MtuSize = minmtu;
++
++    /* Init the media task to decode SBC properly */
++    btif_media_task_dec_init_req(&msg);
++}
++#endif
++
+ static void btif_a2dp_encoder_init(void)
+ {
+     UINT16 minmtu;
+@@ -834,6 +927,34 @@
+ 
+ void btif_a2dp_setup_codec(void)
+ {
++#ifdef A2DP_SINK
++    tBTIF_AV_MEDIA_RECEIVINGS media_receiving;
++    tBTIF_STATUS status;
++
++    GKI_disable();
++
++    /* for now hardcode 44.1 khz 16 bit stereo PCM format */
++    media_receiving.cfg.pcm.sampling_freq = 44100;
++    media_receiving.cfg.pcm.bit_per_sample = 16;
++    media_receiving.cfg.pcm.num_channel = 2;
++    media_receiving.format = BTIF_AV_CODEC_SBC;
++
++    if (bta_av_co_audio_set_codec(&media_receiving, &status))
++    {
++        tBTIF_MEDIA_INIT_AUDIO_RECEIVING mReceive;
++
++        /* Init the decoding task */
++        btif_a2dp_decoder_init();
++
++        /* Build the media task configuration */
++        mReceive.receiving = media_receiving;
++
++        /* Send message to Media task to configure transcoding */
++        btif_media_task_audio_receiving_init_req(&mReceive);
++    }
++
++    GKI_enable();
++#else
+     tBTIF_AV_MEDIA_FEEDINGS media_feeding;
+     tBTIF_STATUS status;
+ 
+@@ -862,6 +983,7 @@
+     }
+ 
+     GKI_enable();
++#endif
+ }
+ 
+ 
+@@ -1112,7 +1234,9 @@
+         btif_media_cb.rx_flush = TRUE;
+         btif_media_task_aa_rx_flush_req();
+         btif_media_task_stop_decoding_req();
++#ifndef A2DP_SINK
+         UIPC_Close(UIPC_CH_ID_AV_AUDIO);
++#endif
+         btif_media_cb.data_channel_open = FALSE;
+         return;
+     }
+@@ -1509,6 +1633,14 @@
+     case BTIF_MEDIA_UIPC_RX_RDY:
+         btif_media_task_aa_handle_uipc_rx_rdy();
+         break;
++#ifdef A2DP_SINK
++    case BTIF_MEDIA_SBC_DEC_INIT:
++        btif_media_task_dec_init(p_msg);
++        break;
++    case BTIF_MEDIA_AUDIO_RECEIVING_INIT:
++        btif_media_task_audio_receiving_init(p_msg);
++        break;
++#endif
+     case BTIF_MEDIA_AUDIO_SINK_CFG_UPDATE:
+ #if (BTA_AV_SINK_INCLUDED == TRUE)
+         btif_media_task_aa_handle_decoder_reset(p_msg);
+@@ -1602,6 +1734,9 @@
+ static void btif_media_task_handle_media(BT_HDR*p_msg)
+ {
+     APPL_TRACE_DEBUG(" btif_media_task_handle_media ");
++#ifdef A2DP_SINK
++    btif_media_aa_recv_frame(); 
++#endif
+     GKI_freebuf(p_msg);
+ }
+ #if (BTA_AV_INCLUDED == TRUE)
+@@ -1653,6 +1788,32 @@
+     return TRUE;
+ }
+ 
++#ifdef A2DP_SINK
++/*******************************************************************************
++ **
++ ** Function         btif_media_task_dec_init_req
++ **
++ ** Description
++ **
++ ** Returns          TRUE is success
++ **
++ *******************************************************************************/
++BOOLEAN btif_media_task_dec_init_req(tBTIF_MEDIA_INIT_AUDIO *p_msg)
++{
++    tBTIF_MEDIA_INIT_AUDIO *p_buf;
++    if (NULL == (p_buf = GKI_getbuf(sizeof(tBTIF_MEDIA_INIT_AUDIO))))
++    {
++        return FALSE;
++    }
++
++    memcpy(p_buf, p_msg, sizeof(tBTIF_MEDIA_INIT_AUDIO));
++    p_buf->hdr.event = BTIF_MEDIA_SBC_DEC_INIT;
++
++    GKI_send_msg(BT_MEDIA_TASK, BTIF_MEDIA_TASK_CMD_MBOX, p_buf);
++    return TRUE;
++}
++#endif
++
+ /*******************************************************************************
+  **
+  ** Function         btif_media_task_audio_feeding_init_req
+@@ -1677,6 +1838,32 @@
+     return TRUE;
+ }
+ 
++#ifdef A2DP_SINK
++/*******************************************************************************
++ **
++ ** Function         btif_media_task_audio_receiving_init_req
++ **
++ ** Description
++ **
++ ** Returns          TRUE is success
++ **
++ *******************************************************************************/
++BOOLEAN btif_media_task_audio_receiving_init_req(tBTIF_MEDIA_INIT_AUDIO_RECEIVING *p_msg)
++{
++    tBTIF_MEDIA_INIT_AUDIO_RECEIVING *p_buf;
++    if (NULL == (p_buf = GKI_getbuf(sizeof(tBTIF_MEDIA_INIT_AUDIO_RECEIVING))))
++    {
++        return FALSE;
++    }
++
++    memcpy(p_buf, p_msg, sizeof(tBTIF_MEDIA_INIT_AUDIO_RECEIVING));
++    p_buf->hdr.event = BTIF_MEDIA_AUDIO_RECEIVING_INIT;
++
++    GKI_send_msg(BT_MEDIA_TASK, BTIF_MEDIA_TASK_CMD_MBOX, p_buf);
++    return TRUE;
++}
++#endif
++
+ /*******************************************************************************
+  **
+  ** Function         btif_media_task_start_aa_req
+@@ -1859,6 +2046,37 @@
+     APPL_TRACE_DEBUG("btif_media_task_enc_init bit pool %d", btif_media_cb.encoder.s16BitPool);
+ }
+ 
++#ifdef A2DP_SINK
++/*******************************************************************************
++ **
++ ** Function       btif_media_task_dec_init
++ **
++ ** Description    Initialize decoding task
++ **
++ ** Returns        void
++ **
++ *******************************************************************************/
++
++static void btif_media_task_dec_init(BT_HDR *p_msg)
++{
++    BTIF_TRACE_WARNING("SDY --- btif_media_task_dec_init()");
++    tBTIF_MEDIA_INIT_AUDIO *pInitAudio = (tBTIF_MEDIA_INIT_AUDIO *) p_msg;
++
++    //APPL_TRACE_DEBUG0("btif_media_task_dec_init");
++
++    btif_media_cb.timestamp = 0;
++
++    /* Default transcoding is SBC to PCM, modified by receiving configuration */
++    btif_media_cb.RxTranscoding = BTIF_MEDIA_TRSCD_SBC_2_PCM;
++    btif_media_cb.RxAaMtuSize = ((BTIF_MEDIA_AA_BUF_SIZE-BTIF_MEDIA_AA_SBC_OFFSET-sizeof(BT_HDR))
++            < pInitAudio->MtuSize) ? (BTIF_MEDIA_AA_BUF_SIZE - BTIF_MEDIA_AA_SBC_OFFSET
++            - sizeof(BT_HDR)) : pInitAudio->MtuSize;
++
++    /* Reset entirely the SBC decoder */
++    SBC_Decoder_Init(&(btif_media_cb.decoder));
++}
++#endif
++
+ /*******************************************************************************
+  **
+  ** Function       btif_media_task_enc_update
+@@ -2089,6 +2307,99 @@
+     }
+ }
+ 
++#ifdef A2DP_SINK
++/*******************************************************************************
++
++ **
++
++ ** Function         btif_media_task_sbc2pcm_init
++
++ **
++
++ ** Description      Init decoding task for SBC to PCM according to receiving
++
++ **
++
++ ** Returns          void
++
++ **
++
++ *******************************************************************************/
++
++static void btif_media_task_sbc2pcm_init(tBTIF_MEDIA_INIT_AUDIO_RECEIVING * p_receiving)
++
++{
++
++    BOOLEAN reconfig_needed = FALSE;
++
++/*
++    APPL_TRACE_DEBUG0("SBC receiving:");
++    APPL_TRACE_DEBUG1("sampling_freq:%d", p_receiving->receiving.cfg.pcm.sampling_freq);
++    APPL_TRACE_DEBUG1("num_channel:%d", p_receiving->receiving.cfg.pcm.num_channel);
++    APPL_TRACE_DEBUG1("bit_per_sample:%d", p_receiving->receiving.cfg.pcm.bit_per_sample);
++*/
++
++#if 0
++    /* Check the SBC receiving sampling_freq */
++    switch (p_receiving->receiving.cfg.pcm.sampling_freq)
++    {
++        case  8000:
++        case 12000:
++        case 16000:
++        case 24000:
++        case 32000:
++        case 48000:
++            /* For these sampling_freq the AV connection must be 48000 */
++            if (btif_media_cb.decoder.s16SamplingFreq != SBC_sf48000)
++            {
++                /* Reconfiguration needed at 48000 */
++                APPL_TRACE_DEBUG0("SBC Reconfiguration needed at 48000");
++                btif_media_cb.decoder.s16SamplingFreq = SBC_sf48000;
++                reconfig_needed = TRUE;
++            }
++            break;
++        case 11025:
++        case 22050:
++        case 44100:
++            /* For these sampling_freq the AV connection must be 44100 */
++            if (btif_media_cb.decoder.s16SamplingFreq != SBC_sf44100)
++            {
++                /* Reconfiguration needed at 44100 */
++                APPL_TRACE_DEBUG0("SBC Reconfiguration needed at 44100");
++                btif_media_cb.decoder.s16SamplingFreq = SBC_sf44100;
++                reconfig_needed = TRUE;
++            }
++            break;
++        default:
++            APPL_TRACE_DEBUG0("Receiving SBC sampling_freq unsupported");
++            break;
++    }
++
++    /* Some AV Headsets do not support Mono => always ask for Stereo */
++    if (btif_media_cb.decoder.s16ChannelMode == SBC_MONO)
++    {
++        APPL_TRACE_DEBUG0("SBC Reconfiguration needed in Stereo");
++        btif_media_cb.decoder.s16ChannelMode = SBC_JOINT_STEREO;
++        reconfig_needed = TRUE;
++    }
++
++    if (reconfig_needed != FALSE)
++    {
++        APPL_TRACE_DEBUG1("btif_media_task_sbc2pcm_init :: mtu %d", btif_media_cb.RxAaMtuSize);
++        APPL_TRACE_DEBUG6("ch mode %d, nbsubd %d, nb %d, alloc %d, rate %d, freq %d",
++                btif_media_cb.decoder.s16ChannelMode,
++                btif_media_cb.decoder.s16NumOfSubBands, btif_media_cb.decoder.s16NumOfBlocks,
++                btif_media_cb.decoder.s16AllocationMethod, btif_media_cb.decoder.u16BitRate,
++                btif_media_cb.decoder.s16SamplingFreq);
++        SBC_Decoder_Init(&(btif_media_cb.decoder));
++    }
++    else
++#endif
++    {
++        //APPL_TRACE_DEBUG0("btif_media_task_sbc2pcm_init no SBC reconfig needed");
++    }
++}
++#endif
+ 
+ /*******************************************************************************
+  **
+@@ -2123,6 +2434,39 @@
+     }
+ }
+ 
++#ifdef A2DP_SINK
++/*******************************************************************************
++ **
++ ** Function         btif_media_task_audio_receiving_init
++ **
++ ** Description      Initialize the audio path according to the receiving format
++ **
++ ** Returns          void
++ **
++ *******************************************************************************/
++static void btif_media_task_audio_receiving_init(BT_HDR *p_msg)
++{
++    tBTIF_MEDIA_INIT_AUDIO_RECEIVING *p_receiving = (tBTIF_MEDIA_INIT_AUDIO_RECEIVING *) p_msg;
++
++    //APPL_TRACE_DEBUG1("btif_media_task_audio_receiving_init format:%d", p_receiving->receiving.format);
++
++    /* Save Media Receiving information */
++    btif_media_cb.media_receiving = p_receiving->receiving;
++
++    /* Handle different receiving formats */
++    switch (p_receiving->receiving.format)
++    {
++        case BTIF_AV_CODEC_SBC:
++            btif_media_cb.RxTranscoding = BTIF_MEDIA_TRSCD_SBC_2_PCM;
++            btif_media_task_sbc2pcm_init(p_receiving);
++            break;
++        default :
++            //APPL_TRACE_ERROR1("unknown receiving format %d", p_receiving->receiving.format);
++            break;
++    }
++}
++#endif
++
+ int btif_a2dp_get_track_frequency(UINT8 frequency) {
+     int freq = 48000;
+     switch (frequency) {
+@@ -2218,6 +2562,9 @@
+     UINT32          freq_multiple = 48*20; /* frequency multiple for 20ms of data , initialize with 48K*/
+     UINT32          num_blocks = 16;
+     UINT32          num_subbands = 8;
++//#ifdef A2DP_SINK
++    tBTIF_MEDIA_INIT_AUDIO *pInitAudio = (tBTIF_MEDIA_INIT_AUDIO *) p_msg;
++//#endif
+ 
+     APPL_TRACE_DEBUG("btif_media_task_aa_handle_decoder_reset p_codec_info[%x:%x:%x:%x:%x:%x]",
+             p_buf->codec_info[1], p_buf->codec_info[2], p_buf->codec_info[3],
+@@ -2235,6 +2582,17 @@
+ 
+     btif_media_cb.rx_flush = FALSE;
+     APPL_TRACE_DEBUG("Reset to sink role");
++//#ifdef A2DP_SINK
++    btif_media_cb.RxTranscoding = BTIF_MEDIA_TRSCD_SBC_2_PCM;
++    btif_media_cb.RxAaMtuSize = ((BTIF_MEDIA_AA_BUF_SIZE-BTIF_MEDIA_AA_SBC_OFFSET-sizeof(BT_HDR))
++            < pInitAudio->MtuSize) ? (BTIF_MEDIA_AA_BUF_SIZE - BTIF_MEDIA_AA_SBC_OFFSET
++            - sizeof(BT_HDR)) : pInitAudio->MtuSize;
++    
++    SBC_Decoder_Init(&(btif_media_cb.decoder));
++
++    btif_media_cb.rx_flush = false;
++//#endif
++
+     status = OI_CODEC_SBC_DecoderReset(&context, contextData, sizeof(contextData), 2, 2, FALSE);
+     if (!OI_SUCCESS(status)) {
+         APPL_TRACE_ERROR("OI_CODEC_SBC_DecoderReset failed with error code %d\n", status);
+@@ -2527,6 +2885,67 @@
+     return btif_media_cb.RxSbcQ.count;
+ }
+ 
++#ifdef A2DP_SINK
++static void btif_media_aa_recv_frame(void)
++{
++    BT_HDR *p_buf;
++
++    p_buf = (BT_HDR *)GKI_dequeue(&(btif_media_cb.RxAaQ));
++    if (p_buf)
++    {
++        switch (btif_media_cb.RxTranscoding)
++        {
++        case BTIF_MEDIA_TRSCD_SBC_2_PCM:
++            btif_media_aa_recv_sbc_frame(p_buf);  // SDY --- original
++            break;
++        default:
++            BTIF_TRACE_WARNING("SDY --- case : (default) -- btif_media_aa_recv_frame unsupported transcoding format 0x%x",btif_media_cb.RxTranscoding);
++            GKI_freebuf(p_buf);
++            break;
++        }
++    }
++}
++
++static void btif_media_aa_recv_sbc_frame(BT_HDR *p_buf)
++{
++    /* call SBC decoder to decode SBC frames to 16bit PCM */
++    btif_media_cb.decoder.pu8Packet = (UINT8 *)(p_buf + 1) + p_buf->offset;
++    btif_media_cb.decoder.u16PacketLength = p_buf->len;
++
++    do
++    {
++        SBC_Decoder(&btif_media_cb.decoder);
++
++        if (btif_media_cb.decoder.s16SbcFrameLength < 1)
++        {
++            break;
++        }
++
++        btif_media_cb.decoder.pu8Packet +=
++                                        btif_media_cb.decoder.s16SbcFrameLength;
++        btif_media_cb.decoder.u16PacketLength -=
++                                        btif_media_cb.decoder.s16SbcFrameLength;
++
++        /* Write PCM data to upper layer */
++        if (!btif_media_aa_write_receiving(UIPC_CH_ID_AV_AUDIO))
++        {
++            BTIF_TRACE_WARNING("SDY --- btif_media_aa_recv_sbc_frame failed to write PCM data");
++        }
++    } while (1);
++
++    GKI_freebuf(p_buf);
++}
++
++static BOOLEAN btif_media_aa_write_receiving(tUIPC_CH_ID channel_id)
++{
++    UINT16 event;
++    event = 0;
++    return UIPC_Send(channel_id, event,
++                     (UINT8 *)btif_media_cb.decoder.as16SbBuffer,
++                     btif_media_cb.decoder.s16PcmLength);
++}
++#endif
++
+ /*******************************************************************************
+  **
+  ** Function         btif_media_aa_readbuf
+@@ -2720,6 +3139,41 @@
+     return FALSE;
+ }
+ 
++#ifdef A2DP_SINK
++/*******************************************************************************
++ ** Function         btif_media_aa_writebuf
++ **
++ ** Description      Enqueue an Advance Audio media GKI buffer to be processed by btif media task
++ **
++ **
++ ** Returns          void
++*******************************************************************************/
++void btif_media_aa_writebuf(BT_HDR *p_buf, UINT32 timestamp, UINT16 seq_num)
++{
++    GKI_enqueue(&(btif_media_cb.RxAaQ), p_buf);
++}
++
++/*******************************************************************************
++ ** Function         bt_media_aa_snk_data_ready
++ **
++ ** Descriptoin      This function sends an event to meida task that Advance Audio
++ **                  media GKI buffer is ready in receiving queue
++ **
++ ** Returns          void
++*******************************************************************************/
++void btif_media_aa_snk_data_ready(void)
++{
++    BT_HDR *p_buf;
++
++    p_buf = GKI_getbuf(sizeof(BT_HDR));
++    if (p_buf)
++    {
++        p_buf->event = BTIF_MEDIA_AA_RX_RDY;
++        GKI_send_msg(BT_MEDIA_TASK, BTIF_MEDIA_TASK_DATA_MBOX, p_buf);
++    }
++}
++#endif
++
+ /*******************************************************************************
+  **
+  ** Function         btif_media_aa_prep_sbc_2_send
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/btif/src/btif_storage.c lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/btif/src/btif_storage.c
+--- repo_avn/external/bluetooth/bluedroid/btif/src/btif_storage.c	2017-07-12 22:05:21.121188905 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/btif/src/btif_storage.c	2017-01-25 20:49:25.818119000 +0900
+@@ -644,6 +644,14 @@
+                                               p_uuid+num_uuids);
+                             num_uuids++;
+                         }break;
++#ifdef A2DP_SINK
++                    case BTA_A2DP_SOURCE_SERVICE_ID:
++                        {
++                            uuid16_to_uuid128(UUID_SERVCLASS_AUDIO_SINK,
++                                              p_uuid+num_uuids);
++                            num_uuids++;
++                        }break;
++#endif
+                     case BTA_A2DP_SERVICE_ID:
+                         {
+                             uuid16_to_uuid128(UUID_SERVCLASS_AUDIO_SOURCE,
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/embdrv/sbc/decoder/include/sbc_decoder.h lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/embdrv/sbc/decoder/include/sbc_decoder.h
+--- repo_avn/external/bluetooth/bluedroid/embdrv/sbc/decoder/include/sbc_decoder.h	1970-01-01 09:00:00.000000000 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/embdrv/sbc/decoder/include/sbc_decoder.h	2017-02-01 10:58:03.016696000 +0900
+@@ -0,0 +1,49 @@
++#ifndef SBC_DECODER_H
++#define SBC_DECODER_H
++
++#define DECODER_VERSION "0025"
++
++#ifdef BUILDCFG
++    #include "bt_target.h"
++#endif
++
++/*DEFINES*/
++#define MINIMUM_DEC_VX_BUFFER_SIZE (8*10*2)
++#ifndef DEC_VX_BUFFER_SIZE
++#define DEC_VX_BUFFER_SIZE (MINIMUM_DEC_VX_BUFFER_SIZE + 64)
++/*#define DEC_VX_BUFFER_SIZE MINIMUM_DEC_VX_BUFFER_SIZE + 1024*/
++#endif
++
++#include "sbc_types.h"
++#include "sbc_encoder.h"
++
++typedef struct SBC_DEC_PARAMS_TAG
++{
++    /*-----------output parameter---------------*/
++    // the final decoded PCM for one frame
++    SINT16 as16SbBuffer[SBC_MAX_NUM_OF_CHANNELS * SBC_MAX_NUM_OF_SUBBANDS *  SBC_MAX_NUM_OF_BLOCKS];
++    // the length of PCM for one frame so that the caller can copy
++    SINT16 s16PcmLength;
++    // the lenght of a decoded SBC frame
++    SINT16 s16SbcFrameLength;
++
++    /*-----------input parameter---------------*/
++    // the data need to be decoded
++    UINT8  *pu8Packet;
++    UINT16 u16PacketLength;
++
++}SBC_DEC_PARAMS;
++
++#ifdef __cplusplus
++extern "C"
++{
++#endif
++SBC_API extern void SBC_Decoder(SBC_DEC_PARAMS *strDecParams);
++
++SBC_API extern void SBC_Decoder_Init(SBC_DEC_PARAMS *strDecParams);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/include/bt_target.h lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/include/bt_target.h
+--- repo_avn/external/bluetooth/bluedroid/include/bt_target.h	2017-07-12 22:05:21.137188873 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/include/bt_target.h	2017-01-25 20:49:25.818119000 +0900
+@@ -168,7 +168,7 @@
+ #endif
+ 
+ #ifndef BTA_AV_SINK_INCLUDED
+-#define BTA_AV_SINK_INCLUDED FALSE
++#define BTA_AV_SINK_INCLUDED TRUE
+ #endif
+ 
+ #ifndef BTA_DISABLE_DELAY
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/main/Android.mk lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/main/Android.mk
+--- repo_avn/external/bluetooth/bluedroid/main/Android.mk	2017-07-12 22:05:21.137188873 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/main/Android.mk	2017-07-05 13:29:54.227037000 +0900
+@@ -72,6 +72,10 @@
+ 	../embdrv/sbc/encoder/srce/sbc_encoder.c \
+ 	../embdrv/sbc/encoder/srce/sbc_packing.c \
+ 
++# sbc decoder
++#LOCAL_SRC_FILES += \
++#    ../embdrv/sbc/decoder/srce/sbc_decoder.c \
++
+ LOCAL_SRC_FILES += \
+ 	../udrv/ulinux/uipc.c
+ 
+@@ -120,7 +124,8 @@
+ 	libcutils \
+ 	libdl \
+ 	liblog \
+-	libpower
++	libpower \
++	libbt_sbc_decoder 
+ 
+ LOCAL_STATIC_LIBRARIES := \
+ 	libbt-brcm_bta \
+@@ -131,7 +136,7 @@
+ 	libbt-qcom_sbc_decoder \
+ 	libosi \
+ 	libtinyxml2 \
+-	libbt-qcom_sbc_decoder
++	libbt-qcom_sbc_decoder 
+ 
+ LOCAL_MODULE := bluetooth.default
+ LOCAL_MODULE_RELATIVE_PATH := hw
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/bluetooth/bluedroid/udrv/ulinux/uipc.c lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/udrv/ulinux/uipc.c
+--- repo_avn/external/bluetooth/bluedroid/udrv/ulinux/uipc.c	2017-07-12 22:05:21.521188099 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/bluetooth/bluedroid/udrv/ulinux/uipc.c	2017-01-25 20:49:25.818119000 +0900
+@@ -712,11 +712,19 @@
+     if (write(uipc_main.ch[ch_id].fd, p_buf, msglen) < 0)
+     {
+         BTIF_TRACE_ERROR("failed to write (%s)", strerror(errno));
++//#ifdef A2DP_SINK
++        UIPC_UNLOCK();
++        return FALSE;
++//#endif
+     }
+ 
+     UIPC_UNLOCK();
+ 
+-    return FALSE;
++//#ifdef A2DP_SINK
++    return TRUE;
++//#else
++//    return FALSE;
++//#endif
+ }
+ 
+ /*******************************************************************************

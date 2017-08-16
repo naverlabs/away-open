@@ -1,0 +1,320 @@
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/adbd.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/adbd.te
+--- repo_avn/external/sepolicy/adbd.te	2017-07-12 22:07:18.093022906 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/adbd.te	2017-01-22 00:33:21.277591000 +0900
+@@ -82,3 +82,5 @@
+ allow adbd system_file:file r_file_perms;
+ 
+ allow adbd kernel:security read_policy;
++
++allow adbd init:file read;
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/app.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/app.te
+--- repo_avn/external/sepolicy/app.te	2017-07-12 22:07:18.093022906 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/app.te	2017-04-25 20:01:21.462837000 +0900
+@@ -203,7 +203,7 @@
+ # Superuser capabilities.
+ # bluetooth requires net_admin and wake_alarm.
+ neverallow { appdomain -bluetooth -shell } self:capability *;
+-neverallow { appdomain -bluetooth } self:capability2 *;
++neverallow { appdomain -bluetooth -shell } self:capability2 *;
+ 
+ # Block device access.
+ neverallow appdomain dev_type:blk_file { read write };
+@@ -279,7 +279,7 @@
+     { create write setattr relabelfrom relabelto append unlink link rename };
+ 
+ # Write to /system.
+-neverallow { appdomain -shell } system_file:dir_file_class_set
++neverallow {appdomain -shell} system_file:dir_file_class_set
+     { create write setattr relabelfrom relabelto append unlink link rename };
+ 
+ # Write to entrypoint executables.
+@@ -291,7 +291,7 @@
+ # specified in file_contexts.  Define a different type for portions
+ # that should be writable by apps.
+ # Exception for system_app for Settings.
+-neverallow { appdomain -system_app }
++neverallow { appdomain -system_app -platform_app -untrusted_app -radio }
+     system_data_file:dir_file_class_set
+     { create write setattr relabelfrom relabelto append unlink link rename };
+ 
+@@ -337,8 +337,8 @@
+ neverallow { appdomain -shell } efs_file:dir_file_class_set read;
+ 
+ # Write to various pseudo file systems.
+-#neverallow { appdomain -bluetooth -nfc }
+-#    sysfs:dir_file_class_set write;
++neverallow { appdomain -bluetooth -nfc -shell -system_app }
++    sysfs:dir_file_class_set write;
+ neverallow appdomain
+     proc:dir_file_class_set write;
+ 
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/bluetooth.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/bluetooth.te
+--- repo_avn/external/sepolicy/bluetooth.te	2017-07-12 22:07:18.093022906 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/bluetooth.te	2017-01-22 00:33:21.277591000 +0900
+@@ -59,3 +59,5 @@
+ # bluetooth requires net_admin and wake_alarm.
+ neverallow bluetooth self:capability ~net_admin;
+ neverallow bluetooth self:capability2 ~wake_alarm;
++allow bluetooth sysfs:file write;
++allow bluetooth unlabeled:dir {search write};
+\ No newline at end of file
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/dex2oat.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/dex2oat.te
+--- repo_avn/external/sepolicy/dex2oat.te	2017-07-12 22:07:18.093022906 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/dex2oat.te	2017-01-22 00:33:21.277591000 +0900
+@@ -3,6 +3,7 @@
+ type dex2oat_exec, exec_type, file_type;
+ 
+ allow dex2oat dalvikcache_data_file:file write;
++allow dex2oat selinuxfs:file write;
+ # Read symlinks in /data/dalvik-cache
+ allow dex2oat dalvikcache_data_file:lnk_file read;
+ allow dex2oat installd:fd use;
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/domain.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/domain.te
+--- repo_avn/external/sepolicy/domain.te	2017-07-12 22:07:18.093022906 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/domain.te	2017-05-17 16:59:04.255323000 +0900
+@@ -171,11 +171,11 @@
+ ###
+ 
+ # Do not allow any confined domain to create new unlabeled files.
+-neverallow { domain -unconfineddomain -recovery -system_server -installd -untrusted_app } unlabeled:dir_file_class_set create;
++neverallow { domain -unconfineddomain -recovery -system_server -installd -status_setting } unlabeled:dir_file_class_set create;
+ 
+ # Limit ability to ptrace or read sensitive /proc/pid files of processes
+ # with other UIDs to these whitelisted domains.
+-neverallow { domain -debuggerd -vold -dumpstate -system_server } self:capability sys_ptrace;
++neverallow { domain -debuggerd -vold -dumpstate -system_server -kernel } self:capability sys_ptrace;
+ 
+ # Limit device node creation to these whitelisted domains.
+ neverallow { domain -kernel -init -recovery -ueventd -watchdogd -healthd -vold -uncrypt } self:capability mknod;
+@@ -234,7 +234,7 @@
+ neverallow { domain -init -system_server -ueventd -unconfineddomain } hw_random_device:chr_file *;
+ 
+ # Ensure that all entrypoint executables are in exec_type.
+-neverallow domain { file_type -exec_type }:file entrypoint;
++neverallow { domain } { file_type -exec_type }:file entrypoint;
+ 
+ # Ensure that nothing in userspace can access /dev/mem or /dev/kmem
+ neverallow { domain -kernel -ueventd -init } kmem_device:chr_file *;
+@@ -246,7 +246,7 @@
+ neverallow { domain -init } proc_security:file { append write };
+ 
+ # No domain should be allowed to ptrace init.
+-#neverallow domain init:process ptrace;
++# neverallow domain init:process ptrace;
+ 
+ # Init can't receive binder calls. If this neverallow rule is being
+ # triggered, it's probably due to a service with no SELinux domain.
+@@ -259,7 +259,8 @@
+ # Don't allow raw read/write/open access to generic devices.
+ # Rather force a relabel to a more specific type.
+ # ueventd is exempt from this, as its managing these devices.
+-neverallow { domain -unconfineddomain -ueventd -recovery -shell -mediaserver } device:chr_file { open read write };
++# neverallow { domain -unconfineddomain -ueventd -recovery -shell -mediaserver } device:chr_file { open read write };
++neverallow { domain -unconfineddomain -ueventd -recovery -shell -mediaserver -bluetooth } device:chr_file { open read write };
+ 
+ # Limit what domains can mount filesystems or change their mount flags.
+ # sdcard_type / vfat is exempt as a larger set of domains need
+@@ -290,7 +291,7 @@
+ neverallow { domain -init } property_data_file:file { create setattr relabelfrom write append unlink link rename };
+ 
+ # Only recovery should be doing writes to /system
+-neverallow { domain -recovery -shell -zygote } { system_file exec_type }:dir_file_class_set
++neverallow { domain -recovery -shell -zygote -ueventd -init -status_setting } { system_file exec_type }:dir_file_class_set
+     { create write setattr relabelfrom relabelto append unlink link rename };
+ 
+ # Nothing should be writing to files in the rootfs.
+@@ -311,6 +312,6 @@
+ # system_app_service rather than the generic type.
+ # New service_types are defined in service.te and new mappings
+ # from service name to service_type are defined in service_contexts.
+-neverallow domain default_android_service:service_manager add;
++neverallow { domain -surfaceflinger -ipod_monitor } default_android_service:service_manager add;
+ 
+ neverallow { domain -init -recovery -system_server } frp_block_device:blk_file rw_file_perms;
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/kernel.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/kernel.te
+--- repo_avn/external/sepolicy/kernel.te	2017-07-12 22:07:18.097022903 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/kernel.te	2017-04-21 18:08:28.645738000 +0900
+@@ -64,4 +64,4 @@
+ #   some other program.  Fix your init.rc file.
+ # - You are running an exploit which switched to the init task credentials
+ #   and is then trying to exec a shell or other program.  You lose!
+-neverallow kernel { file_type fs_type -rootfs }:file { entrypoint execute_no_trans };
++neverallow kernel { file_type -system_file -dumpstate_exec -vdc_exec fs_type -rootfs }:file { entrypoint execute_no_trans };
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/lmkd.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/lmkd.te
+--- repo_avn/external/sepolicy/lmkd.te	2017-07-12 22:07:18.097022903 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/lmkd.te	2017-01-22 00:33:21.277591000 +0900
+@@ -18,6 +18,7 @@
+ allow lmkd appdomain:file write;
+ r_dir_file(lmkd, system_server)
+ allow lmkd system_server:file write;
++allow lmkd selinuxfs:file write;
+ 
+ ## Writes to /sys/module/lowmemorykiller/parameters/minfree
+ allow lmkd sysfs_lowmemorykiller:file w_file_perms;
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/mediaserver.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/mediaserver.te
+--- repo_avn/external/sepolicy/mediaserver.te	2017-07-12 22:07:18.097022903 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/mediaserver.te	2017-04-21 18:08:28.645738000 +0900
+@@ -83,3 +83,4 @@
+ # /oem access
+ allow mediaserver oemfs:dir search;
+ allow mediaserver oemfs:file r_file_perms;
++neverallow { appdomain -shell } device:chr_file { read write };
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/platform_app.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/platform_app.te
+--- repo_avn/external/sepolicy/platform_app.te	2017-07-12 22:07:18.097022903 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/platform_app.te	2017-01-22 00:33:21.277591000 +0900
+@@ -27,3 +27,4 @@
+ # Write to /cache.
+ allow platform_app cache_file:dir create_dir_perms;
+ allow platform_app cache_file:file create_file_perms;
++allow platform_app unlabeled:dir add_name;
+\ No newline at end of file
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/property_contexts lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/property_contexts
+--- repo_avn/external/sepolicy/property_contexts	2017-07-12 22:07:18.097022903 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/property_contexts	2017-04-16 23:19:40.755327000 +0900
+@@ -38,6 +38,7 @@
+ persist.service.        u:object_r:system_prop:s0
+ persist.service.bdroid. u:object_r:bluetooth_prop:s0
+ persist.security.       u:object_r:system_prop:s0
++persist.naverlabs.      u:object_r:system_prop:s0
+ 
+ # selinux non-persistent properties
+ selinux.                u:object_r:security_prop:s0
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/shell.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/shell.te
+--- repo_avn/external/sepolicy/shell.te	2017-07-12 22:07:18.097022903 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/shell.te	2017-01-22 00:33:21.277591000 +0900
+@@ -53,3 +53,4 @@
+ 
+ # allow shell to run dmesg
+ allow shell kernel:system syslog_read;
++allow shell rootfs:file entrypoint;
+\ No newline at end of file
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/surfaceflinger.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/surfaceflinger.te
+--- repo_avn/external/sepolicy/surfaceflinger.te	2017-07-12 22:07:18.097022903 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/surfaceflinger.te	2017-04-21 18:08:28.645738000 +0900
+@@ -58,6 +58,7 @@
+ allow surfaceflinger tee_device:chr_file rw_file_perms;
+ 
+ allow surfaceflinger surfaceflinger_service:service_manager add;
++allow surfaceflinger init:file read;
+ 
+ ###
+ ### Neverallow rules
+@@ -66,4 +67,4 @@
+ 
+ # Do not allow accessing SDcard files as unsafe ejection could
+ # cause the kernel to kill the process.
+-neverallow surfaceflinger sdcard_type:file rw_file_perms;
++neverallow surfaceflinger { sdcard_type -fuse }:file rw_file_perms;
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/system_app.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/system_app.te
+--- repo_avn/external/sepolicy/system_app.te	2017-07-12 22:07:18.097022903 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/system_app.te	2017-04-17 17:26:21.166877000 +0900
+@@ -40,6 +40,9 @@
+ allow system_app system_prop:property_service set;
+ allow system_app ctl_bugreport_prop:property_service set;
+ allow system_app logd_prop:property_service set;
++allow system_app unlabeled:dir getattr;
++allow system_app unlabeled:file {open read write getattr lock};
++allow system_app unlabeled:dir read;
+ 
+ # Create /data/anr/traces.txt.
+ allow system_app anr_data_file:dir ra_dir_perms;
+@@ -49,6 +52,9 @@
+ allow system_app asec_apk_file:file r_file_perms;
+ 
+ allow system_app system_app_service:service_manager add;
++allow system_app cache_file:dir {create write read open append remove_name add_name rename setattr unlink};
++allow system_app cache_file:file {create write read open append unlink rename setattr};
++allow system_app shell_exec:file rx_file_perms;
+ 
+ allow system_app keystore:keystore_key {
+ 	test
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/system_server.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/system_server.te
+--- repo_avn/external/sepolicy/system_server.te	2017-07-12 22:07:18.101022899 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/system_server.te	2017-04-21 18:08:28.645738000 +0900
+@@ -407,4 +407,4 @@
+ 
+ # Do not allow accessing SDcard files as unsafe ejection could
+ # cause the kernel to kill the system_server.
+-neverallow system_server sdcard_type:file rw_file_perms;
++neverallow system_server { sdcard_type -fuse }:file rw_file_perms;
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/uncrypt.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/uncrypt.te
+--- repo_avn/external/sepolicy/uncrypt.te	2017-07-12 22:07:18.101022899 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/uncrypt.te	2017-04-10 23:42:50.912742000 +0900
+@@ -4,7 +4,8 @@
+ 
+ init_daemon_domain(uncrypt)
+ 
+-allow uncrypt self:capability dac_override;
++allow uncrypt self:capability { net_admin net_raw dac_override dac_read_search };
++#allow uncrypt self:capability dac_override;
+ 
+ # Read OTA zip file from /data/data/com.google.android.gsf/app_download
+ r_dir_file(uncrypt, app_data_file)
+@@ -18,7 +19,8 @@
+ # Read /cache/recovery/command
+ # Rename /cache/recovery/command.tmp to /cache/recovery/command
+ allow uncrypt cache_file:dir rw_dir_perms;
+-allow uncrypt cache_file:file create_file_perms;
++allow uncrypt cache_file:file { create_file_perms open unlink read write append };
++allow uncrypt shell_exec:file rx_file_perms;
+ 
+ # Set a property to reboot the device.
+ unix_socket_connect(uncrypt, property, init)
+@@ -28,3 +30,13 @@
+ allow uncrypt self:capability sys_rawio;
+ allow uncrypt block_device:blk_file w_file_perms;
+ allow uncrypt block_device:dir r_dir_perms;
++allow uncrypt system_data_file:file open;
++
++allow uncrypt rootfs:file execute_no_trans;
++allow uncrypt system_file:file execute_no_trans;
++
++# For networking with server
++allow uncrypt node_type:{ tcp_socket udp_socket } node_bind;
++allow uncrypt system_server:tcp_socket { read write getattr getopt shutdown create };
++allow uncrypt port_type:tcp_socket name_connect;
++allow uncrypt self:tcp_socket create_stream_socket_perms;
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/uncrypt.te.original lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/uncrypt.te.original
+--- repo_avn/external/sepolicy/uncrypt.te.original	1970-01-01 09:00:00.000000000 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/uncrypt.te.original	2017-04-10 23:42:50.912742000 +0900
+@@ -0,0 +1,31 @@
++# uncrypt
++type uncrypt, domain;
++type uncrypt_exec, exec_type, file_type;
++
++init_daemon_domain(uncrypt)
++
++allow uncrypt self:capability dac_override;
++
++# Read OTA zip file from /data/data/com.google.android.gsf/app_download
++r_dir_file(uncrypt, app_data_file)
++
++userdebug_or_eng(`
++  # For debugging, allow /data/local/tmp access
++  r_dir_file(uncrypt, shell_data_file)
++')
++
++# Create tmp file /cache/recovery/command.tmp
++# Read /cache/recovery/command
++# Rename /cache/recovery/command.tmp to /cache/recovery/command
++allow uncrypt cache_file:dir rw_dir_perms;
++allow uncrypt cache_file:file create_file_perms;
++
++# Set a property to reboot the device.
++unix_socket_connect(uncrypt, property, init)
++allow uncrypt powerctl_prop:property_service set;
++
++# Raw writes to block device
++allow uncrypt self:capability sys_rawio;
++allow uncrypt block_device:blk_file w_file_perms;
++allow uncrypt block_device:dir r_dir_perms;
++allow uncrypt system_data_file:file open;
+diff -urN '--exclude=.git' '--exclude=.gitignore' repo_avn/external/sepolicy/untrusted_app.te lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/untrusted_app.te
+--- repo_avn/external/sepolicy/untrusted_app.te	2017-07-12 22:07:18.101022899 +0900
++++ lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/lollipop-5.1.1_r6-avn-release_3rd_k1707171.0.0.39/external/sepolicy/untrusted_app.te	2017-01-22 00:33:21.277591000 +0900
+@@ -99,3 +99,4 @@
+ # Allow verifier to access staged apks.
+ allow untrusted_app { apk_tmp_file apk_private_tmp_file }:dir r_dir_perms;
+ allow untrusted_app { apk_tmp_file apk_private_tmp_file }:file r_file_perms;
++allow untrusted_app debugfs:file getattr;
+\ No newline at end of file
